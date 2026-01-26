@@ -1586,11 +1586,11 @@
     <div class="modal-overlay" id="import-kajabi-modal">
         <div class="modal">
             <div class="modal-header">
-                <h3 class="modal-title">Import Kajabi Members</h3>
+                <h3 class="modal-title">Import Kajabi Subscriptions</h3>
                 <button class="modal-close" onclick="closeModal('import-kajabi-modal')">&times;</button>
             </div>
             <div class="modal-body">
-                <p class="mb-2">Upload your Kajabi member export CSV file.</p>
+                <p class="mb-2">Upload your Kajabi <strong>subscriptions.csv</strong> export file.</p>
                 <div class="form-group">
                     <label for="kajabi-file">CSV File</label>
                     <input type="file" id="kajabi-file" accept=".csv">
@@ -1598,7 +1598,11 @@
                 <div class="alert alert-info">
                     <div class="alert-icon">&#128161;</div>
                     <div class="alert-content">
-                        <div class="alert-message">Export from Kajabi: People → Contacts → Export</div>
+                        <div class="alert-message">
+                            <strong>How to export:</strong><br>
+                            Kajabi → Analytics → Revenue → Subscriptions → Export<br><br>
+                            <strong>Expected columns:</strong> Customer Email, Customer Name, Amount, Status, Offer Title
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2240,22 +2244,43 @@
             let updated = 0;
             let skipped = 0;
 
+            // Debug: log first row to see column names
+            if (data.length > 0) {
+                console.log('CSV columns found:', Object.keys(data[0]));
+            }
+
             data.forEach(row => {
-                // Try common Kajabi column names
-                const email = row['Email'] || row['email'] || row['Email Address'];
+                // Try common Kajabi column names (including subscriptions.csv format)
+                const email = row['Customer Email'] || row['Email'] || row['email'] || row['Email Address'];
                 if (!email) {
                     skipped++;
                     return;
                 }
 
+                // Parse amount - handle "$30.00" format
+                let amount = row['Amount'] || row['Price'] || '0';
+                if (typeof amount === 'string') {
+                    amount = amount.replace(/[$,]/g, ''); // Remove $ and commas
+                }
+                amount = parseFloat(amount) || 0;
+
+                // Get billing interval
+                const interval = row['Interval'] || 'Month';
+                const billingFrequency = interval.toLowerCase().includes('year') ? 'annual' : 'monthly';
+
                 const memberData = {
                     id: generateId(),
                     email: email.toLowerCase().trim(),
-                    name: row['Full Name'] || row['Name'] || row['First Name'] + ' ' + (row['Last Name'] || ''),
-                    subscription_plan: row['Offer Name'] || row['Product'] || row['Membership'],
-                    subscription_amount: parseFloat(row['Amount'] || row['Price'] || 0),
-                    subscription_status: mapKajabiStatus(row['Subscription Status'] || row['Status']),
+                    name: row['Customer Name'] || row['Full Name'] || row['Name'] || '',
+                    subscription_plan: row['Offer Title'] || row['Offer Name'] || row['Product'] || row['Membership'] || '',
+                    subscription_amount: amount,
+                    billing_frequency: billingFrequency,
+                    subscription_status: mapKajabiStatus(row['Status'] || row['Subscription Status']),
+                    kajabi_id: row['Kajabi Subscription ID'] || row['Customer ID'] || '',
                     join_date: row['Created At'] || row['Joined'] || new Date().toISOString(),
+                    next_payment_date: row['Next Payment Date'] || '',
+                    canceled_on: row['Canceled On'] || '',
+                    provider: row['Provider'] || 'Kajabi',
                     updated_at: new Date().toISOString()
                 };
 
@@ -2295,13 +2320,24 @@
 
         function mapKajabiStatus(status) {
             if (!status) return 'active';
-            const s = status.toLowerCase();
-            if (s.includes('active')) return 'active';
-            if (s.includes('cancel')) return 'canceled';
+            const s = status.toLowerCase().trim();
+            if (s === 'active') return 'active';
+            if (s === 'canceled' || s === 'cancelled') return 'canceled';
+            if (s === 'paused') return 'paused';
             if (s.includes('past') || s.includes('due')) return 'past_due';
             if (s.includes('trial')) return 'trialing';
+            if (s.includes('cancel')) return 'canceled';
             if (s.includes('pause')) return 'paused';
             return 'active';
+        }
+
+        // Helper to parse currency amounts like "$30.00" or "30.0"
+        function parseAmount(value) {
+            if (!value) return 0;
+            if (typeof value === 'number') return value;
+            // Remove currency symbols, commas, and whitespace
+            const cleaned = String(value).replace(/[$,\s]/g, '');
+            return parseFloat(cleaned) || 0;
         }
 
         function importStripeCSV(account) {
