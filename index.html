@@ -1,0 +1,2639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edmund's Mastermind — Billing Portal</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Chart.js for visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- PapaParse for CSV parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <!-- PDF.js for PDF parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <style>
+        :root {
+            /* Edmund Bogen Brand Colors */
+            --brand-primary: #00a8e1;
+            --brand-primary-dark: #0090c4;
+            --brand-primary-light: #e6f7fc;
+            --navy: #1a3e5c;
+            --navy-light: #2a5275;
+            --navy-dark: #0f2a42;
+            --white: #FFFFFF;
+            --off-white: #f8fafc;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-400: #9ca3af;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --success: #059669;
+            --success-light: #d1fae5;
+            --warning: #d97706;
+            --warning-light: #fef3c7;
+            --danger: #dc2626;
+            --danger-light: #fee2e2;
+            --info: #0284c7;
+            --info-light: #e0f2fe;
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+            --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1);
+            --radius-sm: 4px;
+            --radius-md: 8px;
+            --radius-lg: 12px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--off-white);
+            color: var(--gray-800);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        h1, h2, h3, h4, h5 {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+        }
+
+        /* ============================================
+           LOGIN SCREEN
+           ============================================ */
+        #login-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, var(--navy) 0%, var(--navy-dark) 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        #login-screen.hidden {
+            display: none;
+        }
+
+        .login-container {
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .login-logo {
+            color: var(--white);
+            font-family: 'Montserrat', sans-serif;
+            font-size: 1.75rem;
+            font-weight: 300;
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+        }
+
+        .login-subtitle {
+            color: var(--brand-primary);
+            font-size: 0.8rem;
+            margin-bottom: 2.5rem;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            font-weight: 500;
+        }
+
+        .login-box {
+            background: var(--white);
+            padding: 2.5rem;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-xl);
+            width: 100%;
+            max-width: 380px;
+        }
+
+        .login-box h2 {
+            font-size: 1.25rem;
+            margin-bottom: 1.5rem;
+            color: var(--navy);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .form-group {
+            margin-bottom: 1.25rem;
+            text-align: left;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--gray-600);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 0.875rem 1rem;
+            border: 1px solid var(--gray-300);
+            border-radius: var(--radius-md);
+            font-size: 1rem;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--brand-primary);
+            box-shadow: 0 0 0 3px rgba(0, 168, 225, 0.15);
+        }
+
+        .login-error {
+            color: var(--danger);
+            font-size: 0.875rem;
+            margin-bottom: 1rem;
+            display: none;
+        }
+
+        .login-error.show {
+            display: block;
+        }
+
+        /* ============================================
+           BUTTONS
+           ============================================ */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.25rem;
+            border: none;
+            border-radius: var(--radius-md);
+            font-size: 0.875rem;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn-primary {
+            background: var(--brand-primary);
+            color: var(--white);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .btn-primary:hover {
+            background: var(--brand-primary-dark);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 168, 225, 0.3);
+        }
+
+        .btn-secondary {
+            background: var(--gray-100);
+            color: var(--gray-700);
+        }
+
+        .btn-secondary:hover {
+            background: var(--gray-200);
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--gray-300);
+            color: var(--gray-600);
+        }
+
+        .btn-outline:hover {
+            background: var(--gray-50);
+            border-color: var(--gray-400);
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: var(--white);
+        }
+
+        .btn-danger:hover {
+            background: #b91c1c;
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: var(--white);
+        }
+
+        .btn-success:hover {
+            background: #047857;
+        }
+
+        .btn-sm {
+            padding: 0.5rem 0.875rem;
+            font-size: 0.75rem;
+        }
+
+        .btn-lg {
+            padding: 1rem 2rem;
+            font-size: 1rem;
+        }
+
+        .btn-block {
+            width: 100%;
+        }
+
+        /* ============================================
+           MAIN APP LAYOUT
+           ============================================ */
+        #main-app {
+            display: none;
+            min-height: 100vh;
+        }
+
+        #main-app.active {
+            display: block;
+        }
+
+        /* Header */
+        .app-header {
+            background: var(--navy);
+            color: var(--white);
+            padding: 0;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: var(--shadow-md);
+        }
+
+        .header-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid var(--navy-light);
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .header-logo {
+            font-family: 'Montserrat', sans-serif;
+            font-size: 1.25rem;
+            font-weight: 300;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+        }
+
+        .header-divider {
+            width: 1px;
+            height: 24px;
+            background: var(--navy-light);
+        }
+
+        .header-title {
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: var(--brand-primary);
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .sync-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.75rem;
+            color: var(--gray-400);
+        }
+
+        .sync-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+        }
+
+        .sync-dot.offline {
+            background: var(--warning);
+        }
+
+        .sync-dot.error {
+            background: var(--danger);
+        }
+
+        .user-menu {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            cursor: pointer;
+            padding: 0.5rem 1rem;
+            border-radius: var(--radius-md);
+            transition: background 0.2s;
+        }
+
+        .user-menu:hover {
+            background: var(--navy-light);
+        }
+
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: var(--brand-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+
+        .user-name {
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .user-role {
+            font-size: 0.7rem;
+            color: var(--gray-400);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .logout-btn {
+            background: transparent;
+            border: 1px solid var(--navy-light);
+            color: var(--gray-400);
+            padding: 0.5rem 1rem;
+            border-radius: var(--radius-md);
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .logout-btn:hover {
+            background: var(--navy-light);
+            color: var(--white);
+            border-color: transparent;
+        }
+
+        /* Navigation */
+        .main-nav {
+            display: flex;
+            padding: 0 2rem;
+            gap: 0;
+            overflow-x: auto;
+        }
+
+        .nav-item {
+            padding: 1rem 1.5rem;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--gray-400);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .nav-item:hover {
+            color: var(--white);
+            background: var(--navy-light);
+        }
+
+        .nav-item.active {
+            color: var(--white);
+            border-bottom-color: var(--brand-primary);
+        }
+
+        /* Main Content */
+        .main-content {
+            padding: 2rem;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        /* Page Sections */
+        .page-content {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .page-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Page Header */
+        .page-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 2rem;
+        }
+
+        .page-title {
+            font-size: 1.5rem;
+            font-weight: 500;
+            color: var(--navy);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .page-subtitle {
+            font-size: 0.875rem;
+            color: var(--gray-500);
+            margin-top: 0.25rem;
+            text-transform: none;
+            letter-spacing: 0;
+            font-weight: 400;
+        }
+
+        /* ============================================
+           CARDS & STATS
+           ============================================ */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            padding: 1.5rem;
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--gray-200);
+            transition: all 0.2s;
+        }
+
+        .stat-card:hover {
+            box-shadow: var(--shadow-md);
+            transform: translateY(-2px);
+        }
+
+        .stat-card.highlight {
+            border-left: 4px solid var(--brand-primary);
+        }
+
+        .stat-card.success {
+            border-left: 4px solid var(--success);
+        }
+
+        .stat-card.warning {
+            border-left: 4px solid var(--warning);
+        }
+
+        .stat-card.danger {
+            border-left: 4px solid var(--danger);
+        }
+
+        .stat-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.75rem;
+        }
+
+        .stat-label {
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--gray-500);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .stat-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+        }
+
+        .stat-icon.blue {
+            background: var(--brand-primary-light);
+            color: var(--brand-primary);
+        }
+
+        .stat-icon.green {
+            background: var(--success-light);
+            color: var(--success);
+        }
+
+        .stat-icon.yellow {
+            background: var(--warning-light);
+            color: var(--warning);
+        }
+
+        .stat-icon.red {
+            background: var(--danger-light);
+            color: var(--danger);
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 600;
+            color: var(--navy);
+            line-height: 1.2;
+        }
+
+        .stat-value.currency::before {
+            content: '$';
+            font-size: 1.25rem;
+            font-weight: 400;
+            color: var(--gray-500);
+        }
+
+        .stat-change {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-top: 0.5rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: var(--radius-sm);
+        }
+
+        .stat-change.up {
+            background: var(--success-light);
+            color: var(--success);
+        }
+
+        .stat-change.down {
+            background: var(--danger-light);
+            color: var(--danger);
+        }
+
+        .stat-change.neutral {
+            background: var(--gray-100);
+            color: var(--gray-600);
+        }
+
+        /* ============================================
+           CONTENT CARDS
+           ============================================ */
+        .card {
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--gray-200);
+            overflow: hidden;
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid var(--gray-200);
+            background: var(--gray-50);
+        }
+
+        .card-title {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--navy);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .card-body {
+            padding: 1.5rem;
+        }
+
+        .card-footer {
+            padding: 1rem 1.5rem;
+            border-top: 1px solid var(--gray-200);
+            background: var(--gray-50);
+        }
+
+        /* ============================================
+           TABLES
+           ============================================ */
+        .table-container {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            text-align: left;
+            padding: 0.875rem 1rem;
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--gray-500);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            background: var(--gray-50);
+            border-bottom: 1px solid var(--gray-200);
+        }
+
+        td {
+            padding: 1rem;
+            font-size: 0.875rem;
+            border-bottom: 1px solid var(--gray-100);
+            vertical-align: middle;
+        }
+
+        tr:hover {
+            background: var(--gray-50);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        /* ============================================
+           BADGES
+           ============================================ */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .badge-success {
+            background: var(--success-light);
+            color: var(--success);
+        }
+
+        .badge-warning {
+            background: var(--warning-light);
+            color: var(--warning);
+        }
+
+        .badge-danger {
+            background: var(--danger-light);
+            color: var(--danger);
+        }
+
+        .badge-info {
+            background: var(--info-light);
+            color: var(--info);
+        }
+
+        .badge-neutral {
+            background: var(--gray-100);
+            color: var(--gray-600);
+        }
+
+        /* ============================================
+           ALERTS
+           ============================================ */
+        .alert {
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            padding: 1rem 1.25rem;
+            border-radius: var(--radius-md);
+            margin-bottom: 1rem;
+        }
+
+        .alert-icon {
+            font-size: 1.25rem;
+            flex-shrink: 0;
+        }
+
+        .alert-content {
+            flex: 1;
+        }
+
+        .alert-title {
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .alert-message {
+            font-size: 0.875rem;
+            opacity: 0.9;
+        }
+
+        .alert-danger {
+            background: var(--danger-light);
+            color: var(--danger);
+            border: 1px solid #fca5a5;
+        }
+
+        .alert-warning {
+            background: var(--warning-light);
+            color: #92400e;
+            border: 1px solid #fcd34d;
+        }
+
+        .alert-success {
+            background: var(--success-light);
+            color: #065f46;
+            border: 1px solid #6ee7b7;
+        }
+
+        .alert-info {
+            background: var(--info-light);
+            color: #075985;
+            border: 1px solid #7dd3fc;
+        }
+
+        /* ============================================
+           GRID LAYOUTS
+           ============================================ */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1.5rem;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+        }
+
+        .grid-4 {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 1200px) {
+            .grid-4 {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .grid-3 {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .grid-2, .grid-3, .grid-4 {
+                grid-template-columns: 1fr;
+            }
+            .main-content {
+                padding: 1rem;
+            }
+            .header-top {
+                padding: 1rem;
+            }
+            .main-nav {
+                padding: 0 1rem;
+            }
+            .page-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 1rem;
+            }
+        }
+
+        /* ============================================
+           DASHBOARD SPECIFIC
+           ============================================ */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 1200px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .recent-list {
+            list-style: none;
+        }
+
+        .recent-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 0;
+            border-bottom: 1px solid var(--gray-100);
+        }
+
+        .recent-item:last-child {
+            border-bottom: none;
+        }
+
+        .recent-info {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .recent-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--brand-primary-light);
+            color: var(--brand-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.875rem;
+        }
+
+        .recent-name {
+            font-weight: 500;
+            color: var(--gray-800);
+        }
+
+        .recent-detail {
+            font-size: 0.75rem;
+            color: var(--gray-500);
+        }
+
+        .recent-amount {
+            font-weight: 600;
+            font-size: 0.875rem;
+        }
+
+        .recent-amount.positive {
+            color: var(--success);
+        }
+
+        .recent-amount.negative {
+            color: var(--danger);
+        }
+
+        /* Quick Actions */
+        .quick-actions {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 3rem 2rem;
+            color: var(--gray-500);
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .empty-state-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: var(--gray-700);
+            margin-bottom: 0.5rem;
+        }
+
+        .empty-state-message {
+            font-size: 0.875rem;
+            margin-bottom: 1.5rem;
+        }
+
+        /* ============================================
+           MODAL
+           ============================================ */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 2rem;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-xl);
+            width: 100%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow: auto;
+            animation: modalIn 0.2s ease;
+        }
+
+        @keyframes modalIn {
+            from {
+                opacity: 0;
+                transform: scale(0.95) translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid var(--gray-200);
+        }
+
+        .modal-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--navy);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: var(--gray-400);
+            cursor: pointer;
+            padding: 0.25rem;
+            line-height: 1;
+            transition: color 0.2s;
+        }
+
+        .modal-close:hover {
+            color: var(--gray-700);
+        }
+
+        .modal-body {
+            padding: 1.5rem;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.75rem;
+            padding: 1rem 1.5rem;
+            border-top: 1px solid var(--gray-200);
+            background: var(--gray-50);
+        }
+
+        /* ============================================
+           SETTINGS PAGE
+           ============================================ */
+        .settings-section {
+            margin-bottom: 2rem;
+        }
+
+        .settings-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--navy);
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--brand-primary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .user-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem;
+            background: var(--gray-50);
+            border-radius: var(--radius-md);
+            margin-bottom: 0.75rem;
+        }
+
+        .user-card-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .user-card-avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: var(--brand-primary);
+            color: var(--white);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.125rem;
+            font-weight: 600;
+        }
+
+        .user-card-name {
+            font-weight: 600;
+            color: var(--gray-800);
+        }
+
+        .user-card-role {
+            font-size: 0.75rem;
+            color: var(--gray-500);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        /* ============================================
+           UTILITIES
+           ============================================ */
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .text-muted { color: var(--gray-500); }
+        .text-success { color: var(--success); }
+        .text-danger { color: var(--danger); }
+        .text-warning { color: var(--warning); }
+        .mb-0 { margin-bottom: 0; }
+        .mb-1 { margin-bottom: 0.5rem; }
+        .mb-2 { margin-bottom: 1rem; }
+        .mb-3 { margin-bottom: 1.5rem; }
+        .mb-4 { margin-bottom: 2rem; }
+        .mt-2 { margin-top: 1rem; }
+        .mt-3 { margin-top: 1.5rem; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <!-- ============================================
+         LOGIN SCREEN
+         ============================================ -->
+    <div id="login-screen">
+        <div class="login-container">
+            <div class="login-logo">Edmund's Mastermind</div>
+            <div class="login-subtitle">Billing Portal</div>
+            <div class="login-box">
+                <h2>Sign In</h2>
+                <form id="login-form">
+                    <div class="form-group">
+                        <label for="login-user">User</label>
+                        <select id="login-user">
+                            <option value="">Select user...</option>
+                            <option value="edmund">Edmund Bogen</option>
+                            <option value="eytan">Eytan</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="login-password">Password</label>
+                        <input type="password" id="login-password" placeholder="Enter password">
+                    </div>
+                    <div class="login-error" id="login-error">Invalid credentials. Please try again.</div>
+                    <button type="submit" class="btn btn-primary btn-block">Sign In</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================
+         MAIN APPLICATION
+         ============================================ -->
+    <div id="main-app">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-top">
+                <div class="header-brand">
+                    <span class="header-logo">Edmund's Mastermind</span>
+                    <span class="header-divider"></span>
+                    <span class="header-title">Billing Portal</span>
+                </div>
+                <div class="header-right">
+                    <div class="sync-status">
+                        <span class="sync-dot" id="sync-dot"></span>
+                        <span id="sync-text">Synced</span>
+                    </div>
+                    <div class="user-menu" id="user-menu">
+                        <div class="user-avatar" id="user-avatar">EB</div>
+                        <div>
+                            <div class="user-name" id="user-display-name">Edmund Bogen</div>
+                            <div class="user-role" id="user-role">Admin</div>
+                        </div>
+                    </div>
+                    <button class="logout-btn" onclick="logout()">Logout</button>
+                </div>
+            </div>
+            <nav class="main-nav">
+                <div class="nav-item active" data-tab="dashboard">Dashboard</div>
+                <div class="nav-item" data-tab="members">Members</div>
+                <div class="nav-item" data-tab="reconciliation">Reconciliation</div>
+                <div class="nav-item" data-tab="bookkeeping">Bookkeeping</div>
+                <div class="nav-item" data-tab="reports">Reports</div>
+                <div class="nav-item" data-tab="settings">Settings</div>
+            </nav>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- ============================================
+                 DASHBOARD TAB
+                 ============================================ -->
+            <div class="page-content active" id="page-dashboard">
+                <div class="page-header">
+                    <div>
+                        <h1 class="page-title">Dashboard</h1>
+                        <p class="page-subtitle">Overview of your mastermind billing and finances</p>
+                    </div>
+                    <div class="quick-actions">
+                        <button class="btn btn-primary" onclick="showTab('reconciliation')">Run Reconciliation</button>
+                        <button class="btn btn-secondary" onclick="showTab('members')">Import Members</button>
+                    </div>
+                </div>
+
+                <!-- Stats Cards -->
+                <div class="stats-grid">
+                    <div class="stat-card highlight">
+                        <div class="stat-header">
+                            <span class="stat-label">Monthly Recurring Revenue</span>
+                            <div class="stat-icon blue">$</div>
+                        </div>
+                        <div class="stat-value currency" id="stat-mrr">0</div>
+                        <span class="stat-change up" id="mrr-change">+0% vs last month</span>
+                    </div>
+                    <div class="stat-card success">
+                        <div class="stat-header">
+                            <span class="stat-label">Active Members</span>
+                            <div class="stat-icon green">&#128101;</div>
+                        </div>
+                        <div class="stat-value" id="stat-members">0</div>
+                        <span class="stat-change neutral" id="members-change">0 new this month</span>
+                    </div>
+                    <div class="stat-card warning">
+                        <div class="stat-header">
+                            <span class="stat-label">Outstanding Balance</span>
+                            <div class="stat-icon yellow">&#9888;</div>
+                        </div>
+                        <div class="stat-value currency" id="stat-outstanding">0</div>
+                        <span class="stat-change neutral" id="outstanding-count">0 members</span>
+                    </div>
+                    <div class="stat-card danger">
+                        <div class="stat-header">
+                            <span class="stat-label">Failed Payments</span>
+                            <div class="stat-icon red">&#10006;</div>
+                        </div>
+                        <div class="stat-value" id="stat-failed">0</div>
+                        <span class="stat-change neutral" id="failed-amount">$0 this month</span>
+                    </div>
+                </div>
+
+                <!-- Alerts Section -->
+                <div id="dashboard-alerts" class="mb-3">
+                    <!-- Alerts will be dynamically inserted here -->
+                </div>
+
+                <!-- Dashboard Grid -->
+                <div class="dashboard-grid">
+                    <!-- Recent Transactions -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Recent Transactions</h3>
+                            <button class="btn btn-sm btn-outline" onclick="showTab('bookkeeping')">View All</button>
+                        </div>
+                        <div class="card-body">
+                            <ul class="recent-list" id="recent-transactions">
+                                <li class="empty-state">
+                                    <div class="empty-state-icon">&#128179;</div>
+                                    <div class="empty-state-title">No transactions yet</div>
+                                    <div class="empty-state-message">Import your Stripe data to see transactions here</div>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Quick Stats / Discrepancies -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Billing Issues</h3>
+                            <span class="badge badge-danger" id="issues-count">0</span>
+                        </div>
+                        <div class="card-body">
+                            <ul class="recent-list" id="billing-issues">
+                                <li class="empty-state">
+                                    <div class="empty-state-icon">&#9989;</div>
+                                    <div class="empty-state-title">All clear!</div>
+                                    <div class="empty-state-message">No billing issues found. Run a reconciliation to check for discrepancies.</div>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================
+                 MEMBERS TAB
+                 ============================================ -->
+            <div class="page-content" id="page-members">
+                <div class="page-header">
+                    <div>
+                        <h1 class="page-title">Members</h1>
+                        <p class="page-subtitle">Manage your mastermind members and subscriptions</p>
+                    </div>
+                    <div class="quick-actions">
+                        <button class="btn btn-primary" onclick="openModal('import-kajabi-modal')">Import Kajabi CSV</button>
+                        <button class="btn btn-secondary" onclick="exportMembers()">Export</button>
+                    </div>
+                </div>
+
+                <!-- Member Stats -->
+                <div class="stats-grid mb-3">
+                    <div class="stat-card">
+                        <div class="stat-label">Total Members</div>
+                        <div class="stat-value" id="members-total">0</div>
+                    </div>
+                    <div class="stat-card success">
+                        <div class="stat-label">Active</div>
+                        <div class="stat-value" id="members-active">0</div>
+                    </div>
+                    <div class="stat-card warning">
+                        <div class="stat-label">Past Due</div>
+                        <div class="stat-value" id="members-pastdue">0</div>
+                    </div>
+                    <div class="stat-card danger">
+                        <div class="stat-label">Canceled This Month</div>
+                        <div class="stat-value" id="members-canceled">0</div>
+                    </div>
+                </div>
+
+                <!-- Members Table -->
+                <div class="card">
+                    <div class="card-header">
+                        <div style="display: flex; gap: 1rem; align-items: center;">
+                            <input type="text" id="member-search" placeholder="Search by name or email..." style="padding: 0.5rem 1rem; border: 1px solid var(--gray-300); border-radius: var(--radius-md); width: 250px;">
+                            <select id="member-status-filter" style="padding: 0.5rem 1rem; border: 1px solid var(--gray-300); border-radius: var(--radius-md);">
+                                <option value="">All Statuses</option>
+                                <option value="active">Active</option>
+                                <option value="past_due">Past Due</option>
+                                <option value="canceled">Canceled</option>
+                                <option value="trialing">Trialing</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Plan</th>
+                                    <th>Amount</th>
+                                    <th>Status</th>
+                                    <th>Last Payment</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="members-table-body">
+                                <tr>
+                                    <td colspan="7" class="text-center text-muted" style="padding: 3rem;">
+                                        No members yet. Import your Kajabi CSV to get started.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================
+                 RECONCILIATION TAB
+                 ============================================ -->
+            <div class="page-content" id="page-reconciliation">
+                <div class="page-header">
+                    <div>
+                        <h1 class="page-title">Reconciliation</h1>
+                        <p class="page-subtitle">Match Kajabi members with Stripe payments and identify discrepancies</p>
+                    </div>
+                </div>
+
+                <!-- Import Section -->
+                <div class="grid-3 mb-3">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Kajabi Export</h3>
+                        </div>
+                        <div class="card-body text-center">
+                            <div class="empty-state-icon">&#128196;</div>
+                            <p class="text-muted mb-2">Last import: <span id="kajabi-last-import">Never</span></p>
+                            <button class="btn btn-primary btn-sm" onclick="openModal('import-kajabi-modal')">Upload CSV</button>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Stripe: REIGNation</h3>
+                        </div>
+                        <div class="card-body text-center">
+                            <div class="empty-state-icon">&#128179;</div>
+                            <p class="text-muted mb-2">Last import: <span id="stripe1-last-import">Never</span></p>
+                            <button class="btn btn-primary btn-sm" onclick="openModal('import-stripe1-modal')">Upload CSV</button>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Stripe: Coaching</h3>
+                        </div>
+                        <div class="card-body text-center">
+                            <div class="empty-state-icon">&#128179;</div>
+                            <p class="text-muted mb-2">Last import: <span id="stripe2-last-import">Never</span></p>
+                            <button class="btn btn-primary btn-sm" onclick="openModal('import-stripe2-modal')">Upload CSV</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Run Reconciliation -->
+                <div class="card mb-3">
+                    <div class="card-body text-center">
+                        <button class="btn btn-primary btn-lg" onclick="runReconciliation()">Run Reconciliation</button>
+                        <p class="text-muted mt-2">Compare Kajabi members against Stripe payments and identify issues</p>
+                    </div>
+                </div>
+
+                <!-- Discrepancies Table -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Discrepancies</h3>
+                        <select id="discrepancy-filter" style="padding: 0.5rem 1rem; border: 1px solid var(--gray-300); border-radius: var(--radius-md);">
+                            <option value="">All Issues</option>
+                            <option value="missing_stripe_payment">Missing Payment</option>
+                            <option value="failed_payment">Failed Payment</option>
+                            <option value="amount_mismatch">Amount Mismatch</option>
+                            <option value="missing_kajabi_record">Not in Kajabi</option>
+                        </select>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Member</th>
+                                    <th>Issue Type</th>
+                                    <th>Expected</th>
+                                    <th>Actual</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="discrepancies-table-body">
+                                <tr>
+                                    <td colspan="6" class="text-center text-muted" style="padding: 3rem;">
+                                        No discrepancies found. Run a reconciliation to check for issues.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================
+                 BOOKKEEPING TAB
+                 ============================================ -->
+            <div class="page-content" id="page-bookkeeping">
+                <div class="page-header">
+                    <div>
+                        <h1 class="page-title">Bookkeeping</h1>
+                        <p class="page-subtitle">Track expenses, income, and generate financial reports</p>
+                    </div>
+                    <div class="quick-actions">
+                        <button class="btn btn-primary" onclick="openModal('add-transaction-modal')">Add Transaction</button>
+                        <button class="btn btn-secondary" onclick="openModal('import-statement-modal')">Import Statement</button>
+                    </div>
+                </div>
+
+                <!-- Coming Soon -->
+                <div class="card">
+                    <div class="card-body">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">&#128218;</div>
+                            <div class="empty-state-title">Bookkeeping Module</div>
+                            <div class="empty-state-message">This section will include transaction tracking, expense categorization, and P&L reports.<br>Coming in Phase 5.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================
+                 REPORTS TAB
+                 ============================================ -->
+            <div class="page-content" id="page-reports">
+                <div class="page-header">
+                    <div>
+                        <h1 class="page-title">Reports</h1>
+                        <p class="page-subtitle">Generate financial and membership reports</p>
+                    </div>
+                </div>
+
+                <!-- Coming Soon -->
+                <div class="card">
+                    <div class="card-body">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">&#128202;</div>
+                            <div class="empty-state-title">Reports Module</div>
+                            <div class="empty-state-message">This section will include monthly revenue reports, member churn analysis, and custom report builder.<br>Coming in Phase 6.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================
+                 SETTINGS TAB
+                 ============================================ -->
+            <div class="page-content" id="page-settings">
+                <div class="page-header">
+                    <div>
+                        <h1 class="page-title">Settings</h1>
+                        <p class="page-subtitle">Manage users, categories, and portal configuration</p>
+                    </div>
+                </div>
+
+                <!-- User Management (Admin Only) -->
+                <div class="settings-section" id="user-management-section">
+                    <h3 class="settings-title">User Management</h3>
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="user-card">
+                                <div class="user-card-info">
+                                    <div class="user-card-avatar">EB</div>
+                                    <div>
+                                        <div class="user-card-name">Edmund Bogen</div>
+                                        <div class="user-card-role">Admin</div>
+                                    </div>
+                                </div>
+                                <button class="btn btn-sm btn-outline" onclick="openChangePasswordModal('edmund')">Change Password</button>
+                            </div>
+                            <div class="user-card">
+                                <div class="user-card-info">
+                                    <div class="user-card-avatar">EY</div>
+                                    <div>
+                                        <div class="user-card-name">Eytan</div>
+                                        <div class="user-card-role">Full Admin</div>
+                                    </div>
+                                </div>
+                                <button class="btn btn-sm btn-outline" onclick="openChangePasswordModal('eytan')">Change Password</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Expense Categories -->
+                <div class="settings-section">
+                    <h3 class="settings-title">Expense Categories</h3>
+                    <div class="card">
+                        <div class="card-body">
+                            <p class="text-muted mb-2">Manage expense categories for bookkeeping. Coming in Phase 5.</p>
+                            <button class="btn btn-secondary btn-sm" disabled>Manage Categories</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Data Management -->
+                <div class="settings-section">
+                    <h3 class="settings-title">Data Management</h3>
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="grid-2">
+                                <div>
+                                    <h4 style="font-size: 0.875rem; margin-bottom: 0.5rem;">Export All Data</h4>
+                                    <p class="text-muted mb-2" style="font-size: 0.875rem;">Download a complete backup of all portal data.</p>
+                                    <button class="btn btn-secondary btn-sm" onclick="exportAllData()">Export JSON</button>
+                                </div>
+                                <div>
+                                    <h4 style="font-size: 0.875rem; margin-bottom: 0.5rem;">Import Data</h4>
+                                    <p class="text-muted mb-2" style="font-size: 0.875rem;">Restore from a previous backup.</p>
+                                    <button class="btn btn-secondary btn-sm" onclick="openModal('import-backup-modal')">Import Backup</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- ============================================
+         MODALS
+         ============================================ -->
+
+    <!-- Change Password Modal -->
+    <div class="modal-overlay" id="change-password-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">Change Password</h3>
+                <button class="modal-close" onclick="closeModal('change-password-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">Changing password for: <strong id="change-password-user">User</strong></p>
+                <div class="form-group">
+                    <label for="new-password">New Password</label>
+                    <input type="password" id="new-password" placeholder="Enter new password">
+                </div>
+                <div class="form-group mb-0">
+                    <label for="confirm-password">Confirm Password</label>
+                    <input type="password" id="confirm-password" placeholder="Confirm new password">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('change-password-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="savePassword()">Save Password</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Kajabi Modal -->
+    <div class="modal-overlay" id="import-kajabi-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">Import Kajabi Members</h3>
+                <button class="modal-close" onclick="closeModal('import-kajabi-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">Upload your Kajabi member export CSV file.</p>
+                <div class="form-group">
+                    <label for="kajabi-file">CSV File</label>
+                    <input type="file" id="kajabi-file" accept=".csv">
+                </div>
+                <div class="alert alert-info">
+                    <div class="alert-icon">&#128161;</div>
+                    <div class="alert-content">
+                        <div class="alert-message">Export from Kajabi: People → Contacts → Export</div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('import-kajabi-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="importKajabiCSV()">Import</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Stripe 1 Modal -->
+    <div class="modal-overlay" id="import-stripe1-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">Import Stripe: REIGNation</h3>
+                <button class="modal-close" onclick="closeModal('import-stripe1-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">Upload your Stripe payment export CSV from the REIGNation account.</p>
+                <div class="form-group">
+                    <label for="stripe1-file">CSV File</label>
+                    <input type="file" id="stripe1-file" accept=".csv">
+                </div>
+                <div class="alert alert-info">
+                    <div class="alert-icon">&#128161;</div>
+                    <div class="alert-content">
+                        <div class="alert-message">Export from Stripe: Payments → Export</div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('import-stripe1-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="importStripeCSV('reignation')">Import</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Stripe 2 Modal -->
+    <div class="modal-overlay" id="import-stripe2-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">Import Stripe: Coaching</h3>
+                <button class="modal-close" onclick="closeModal('import-stripe2-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">Upload your Stripe payment export CSV from the Coaching account.</p>
+                <div class="form-group">
+                    <label for="stripe2-file">CSV File</label>
+                    <input type="file" id="stripe2-file" accept=".csv">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('import-stripe2-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="importStripeCSV('coaching')">Import</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================
+         JAVASCRIPT
+         ============================================ -->
+    <script>
+        // ============================================
+        // CONFIGURATION
+        // ============================================
+
+        // Supabase Configuration (Update with your credentials)
+        const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+        const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+
+        // Initialize Supabase client
+        let supabaseClient = null;
+        let syncStatus = 'offline';
+
+        // User credentials (stored locally, synced to Supabase when available)
+        let users = {
+            edmund: {
+                name: 'Edmund Bogen',
+                role: 'admin',
+                password: 'changeme',
+                initials: 'EB'
+            },
+            eytan: {
+                name: 'Eytan',
+                role: 'full_admin',
+                password: 'changeme',
+                initials: 'EY'
+            }
+        };
+
+        // Current user session
+        let currentUser = null;
+
+        // App data (localStorage with Supabase sync)
+        let appData = {
+            members: [],
+            stripeTransactions: [],
+            discrepancies: [],
+            importLogs: [],
+            settings: {}
+        };
+
+        // Storage keys
+        const STORAGE_KEYS = {
+            SESSION: 'mastermind_billing_session',
+            USERS: 'mastermind_billing_users',
+            DATA: 'mastermind_billing_data'
+        };
+
+        // ============================================
+        // INITIALIZATION
+        // ============================================
+
+        document.addEventListener('DOMContentLoaded', function() {
+            loadFromLocalStorage();
+            initSupabase();
+            checkAuth();
+            setupEventListeners();
+        });
+
+        function initSupabase() {
+            if (SUPABASE_URL !== 'YOUR_SUPABASE_URL' &&
+                typeof window !== 'undefined' &&
+                window.supabase &&
+                window.supabase.createClient) {
+                try {
+                    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                    syncStatus = 'online';
+                    updateSyncStatus();
+                    console.log('Supabase connected');
+                } catch (e) {
+                    console.warn('Supabase initialization failed:', e);
+                    syncStatus = 'offline';
+                }
+            } else {
+                syncStatus = 'offline';
+                updateSyncStatus();
+                console.log('Running in offline mode (localStorage only)');
+            }
+        }
+
+        function updateSyncStatus() {
+            const dot = document.getElementById('sync-dot');
+            const text = document.getElementById('sync-text');
+
+            if (syncStatus === 'online') {
+                dot.className = 'sync-dot';
+                text.textContent = 'Synced';
+            } else if (syncStatus === 'offline') {
+                dot.className = 'sync-dot offline';
+                text.textContent = 'Offline';
+            } else {
+                dot.className = 'sync-dot error';
+                text.textContent = 'Error';
+            }
+        }
+
+        function loadFromLocalStorage() {
+            // Load users
+            const storedUsers = localStorage.getItem(STORAGE_KEYS.USERS);
+            if (storedUsers) {
+                users = JSON.parse(storedUsers);
+            }
+
+            // Load app data
+            const storedData = localStorage.getItem(STORAGE_KEYS.DATA);
+            if (storedData) {
+                appData = JSON.parse(storedData);
+            }
+        }
+
+        function saveToLocalStorage() {
+            localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+            localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(appData));
+        }
+
+        function setupEventListeners() {
+            // Login form
+            document.getElementById('login-form').addEventListener('submit', handleLogin);
+
+            // Navigation
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.addEventListener('click', function() {
+                    showTab(this.dataset.tab);
+                });
+            });
+
+            // Close modals on overlay click
+            document.querySelectorAll('.modal-overlay').forEach(overlay => {
+                overlay.addEventListener('click', function(e) {
+                    if (e.target === this) {
+                        this.classList.remove('active');
+                    }
+                });
+            });
+
+            // Member search
+            const memberSearch = document.getElementById('member-search');
+            if (memberSearch) {
+                memberSearch.addEventListener('input', filterMembers);
+            }
+
+            // Member status filter
+            const statusFilter = document.getElementById('member-status-filter');
+            if (statusFilter) {
+                statusFilter.addEventListener('change', filterMembers);
+            }
+        }
+
+        // ============================================
+        // AUTHENTICATION
+        // ============================================
+
+        function checkAuth() {
+            const session = localStorage.getItem(STORAGE_KEYS.SESSION);
+            if (session) {
+                const { username, expires } = JSON.parse(session);
+                if (new Date() < new Date(expires) && users[username]) {
+                    currentUser = { ...users[username], username };
+                    showApp();
+                    return;
+                }
+            }
+            showLogin();
+        }
+
+        function handleLogin(e) {
+            e.preventDefault();
+            const username = document.getElementById('login-user').value;
+            const password = document.getElementById('login-password').value;
+            const errorEl = document.getElementById('login-error');
+
+            if (!username) {
+                errorEl.textContent = 'Please select a user.';
+                errorEl.classList.add('show');
+                return;
+            }
+
+            if (users[username] && users[username].password === password) {
+                // Create session (7 day expiry)
+                const session = {
+                    username: username,
+                    expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+                };
+                localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(session));
+
+                currentUser = { ...users[username], username };
+                errorEl.classList.remove('show');
+                showApp();
+            } else {
+                errorEl.textContent = 'Invalid password. Please try again.';
+                errorEl.classList.add('show');
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem(STORAGE_KEYS.SESSION);
+            currentUser = null;
+            showLogin();
+        }
+
+        function showLogin() {
+            document.getElementById('login-screen').classList.remove('hidden');
+            document.getElementById('main-app').classList.remove('active');
+            document.getElementById('login-password').value = '';
+            document.getElementById('login-user').value = '';
+        }
+
+        function showApp() {
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('main-app').classList.add('active');
+
+            // Update header with user info
+            document.getElementById('user-display-name').textContent = currentUser.name;
+            document.getElementById('user-role').textContent = currentUser.role === 'admin' ? 'Admin' : 'Full Admin';
+            document.getElementById('user-avatar').textContent = currentUser.initials;
+
+            // Show/hide admin-only sections
+            const adminSection = document.getElementById('user-management-section');
+            if (adminSection) {
+                adminSection.style.display = currentUser.role === 'admin' ? 'block' : 'none';
+            }
+
+            // Refresh dashboard
+            refreshDashboard();
+        }
+
+        // ============================================
+        // NAVIGATION
+        // ============================================
+
+        function showTab(tabName) {
+            // Update nav
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.toggle('active', item.dataset.tab === tabName);
+            });
+
+            // Update content
+            document.querySelectorAll('.page-content').forEach(page => {
+                page.classList.toggle('active', page.id === `page-${tabName}`);
+            });
+
+            // Refresh data for specific tabs
+            if (tabName === 'dashboard') {
+                refreshDashboard();
+            } else if (tabName === 'members') {
+                refreshMembersTable();
+            }
+        }
+
+        // ============================================
+        // MODAL FUNCTIONS
+        // ============================================
+
+        function openModal(modalId) {
+            document.getElementById(modalId).classList.add('active');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+
+        let passwordChangeTarget = null;
+
+        function openChangePasswordModal(username) {
+            passwordChangeTarget = username;
+            document.getElementById('change-password-user').textContent = users[username].name;
+            document.getElementById('new-password').value = '';
+            document.getElementById('confirm-password').value = '';
+            openModal('change-password-modal');
+        }
+
+        function savePassword() {
+            const newPassword = document.getElementById('new-password').value;
+            const confirmPassword = document.getElementById('confirm-password').value;
+
+            if (!newPassword) {
+                alert('Please enter a new password.');
+                return;
+            }
+
+            if (newPassword !== confirmPassword) {
+                alert('Passwords do not match.');
+                return;
+            }
+
+            if (newPassword.length < 6) {
+                alert('Password must be at least 6 characters.');
+                return;
+            }
+
+            // Update password
+            users[passwordChangeTarget].password = newPassword;
+            saveToLocalStorage();
+
+            closeModal('change-password-modal');
+            alert(`Password updated for ${users[passwordChangeTarget].name}`);
+        }
+
+        // ============================================
+        // DASHBOARD
+        // ============================================
+
+        function refreshDashboard() {
+            // Calculate stats from appData
+            const activeMembers = appData.members.filter(m => m.subscription_status === 'active');
+            const pastDueMembers = appData.members.filter(m => m.subscription_status === 'past_due');
+            const mrr = activeMembers.reduce((sum, m) => sum + (parseFloat(m.subscription_amount) || 0), 0);
+            const outstanding = pastDueMembers.reduce((sum, m) => sum + (parseFloat(m.subscription_amount) || 0), 0);
+
+            // Failed payments this month
+            const thisMonth = new Date();
+            thisMonth.setDate(1);
+            const failedPayments = appData.stripeTransactions.filter(t =>
+                t.status === 'failed' &&
+                new Date(t.transaction_date) >= thisMonth
+            );
+            const failedAmount = failedPayments.reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
+
+            // Update stats
+            document.getElementById('stat-mrr').textContent = formatCurrency(mrr);
+            document.getElementById('stat-members').textContent = activeMembers.length;
+            document.getElementById('stat-outstanding').textContent = formatCurrency(outstanding);
+            document.getElementById('outstanding-count').textContent = `${pastDueMembers.length} members`;
+            document.getElementById('stat-failed').textContent = failedPayments.length;
+            document.getElementById('failed-amount').textContent = `$${formatCurrency(failedAmount)} this month`;
+
+            // Update issues count
+            const openIssues = appData.discrepancies.filter(d => d.status === 'open').length;
+            document.getElementById('issues-count').textContent = openIssues;
+
+            // Update recent transactions
+            updateRecentTransactions();
+
+            // Update billing issues
+            updateBillingIssues();
+
+            // Update alerts
+            updateDashboardAlerts();
+        }
+
+        function updateRecentTransactions() {
+            const container = document.getElementById('recent-transactions');
+            const transactions = appData.stripeTransactions
+                .sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date))
+                .slice(0, 5);
+
+            if (transactions.length === 0) {
+                container.innerHTML = `
+                    <li class="empty-state">
+                        <div class="empty-state-icon">&#128179;</div>
+                        <div class="empty-state-title">No transactions yet</div>
+                        <div class="empty-state-message">Import your Stripe data to see transactions here</div>
+                    </li>
+                `;
+                return;
+            }
+
+            container.innerHTML = transactions.map(t => `
+                <li class="recent-item">
+                    <div class="recent-info">
+                        <div class="recent-avatar">${getInitials(t.customer_name || t.member_email)}</div>
+                        <div>
+                            <div class="recent-name">${t.customer_name || t.member_email || 'Unknown'}</div>
+                            <div class="recent-detail">${formatDate(t.transaction_date)} · ${t.stripe_account}</div>
+                        </div>
+                    </div>
+                    <div class="recent-amount ${t.status === 'succeeded' ? 'positive' : 'negative'}">
+                        ${t.status === 'succeeded' ? '+' : ''}$${formatCurrency(t.amount)}
+                    </div>
+                </li>
+            `).join('');
+        }
+
+        function updateBillingIssues() {
+            const container = document.getElementById('billing-issues');
+            const issues = appData.discrepancies
+                .filter(d => d.status === 'open')
+                .slice(0, 5);
+
+            if (issues.length === 0) {
+                container.innerHTML = `
+                    <li class="empty-state">
+                        <div class="empty-state-icon">&#9989;</div>
+                        <div class="empty-state-title">All clear!</div>
+                        <div class="empty-state-message">No billing issues found. Run a reconciliation to check for discrepancies.</div>
+                    </li>
+                `;
+                return;
+            }
+
+            container.innerHTML = issues.map(d => `
+                <li class="recent-item">
+                    <div class="recent-info">
+                        <div class="recent-avatar" style="background: var(--danger-light); color: var(--danger);">!</div>
+                        <div>
+                            <div class="recent-name">${d.member_name || d.member_email || 'Unknown'}</div>
+                            <div class="recent-detail">${formatDiscrepancyType(d.discrepancy_type)}</div>
+                        </div>
+                    </div>
+                    <span class="badge badge-danger">${d.priority || 'medium'}</span>
+                </li>
+            `).join('');
+        }
+
+        function updateDashboardAlerts() {
+            const container = document.getElementById('dashboard-alerts');
+            const alerts = [];
+
+            // Check for high-priority discrepancies
+            const criticalIssues = appData.discrepancies.filter(d =>
+                d.status === 'open' && d.priority === 'critical'
+            );
+            if (criticalIssues.length > 0) {
+                alerts.push({
+                    type: 'danger',
+                    title: 'Critical Billing Issues',
+                    message: `${criticalIssues.length} critical billing issues require immediate attention.`
+                });
+            }
+
+            // Check for past due members
+            const pastDue = appData.members.filter(m => m.subscription_status === 'past_due');
+            if (pastDue.length > 0) {
+                alerts.push({
+                    type: 'warning',
+                    title: 'Past Due Members',
+                    message: `${pastDue.length} members have past due payments.`
+                });
+            }
+
+            // Check if data needs refresh
+            const lastImport = appData.importLogs[appData.importLogs.length - 1];
+            if (!lastImport) {
+                alerts.push({
+                    type: 'info',
+                    title: 'Get Started',
+                    message: 'Import your Kajabi and Stripe data to begin tracking your mastermind billing.'
+                });
+            }
+
+            if (alerts.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            container.innerHTML = alerts.map(a => `
+                <div class="alert alert-${a.type}">
+                    <div class="alert-icon">${a.type === 'danger' ? '&#9888;' : a.type === 'warning' ? '&#9888;' : '&#128161;'}</div>
+                    <div class="alert-content">
+                        <div class="alert-title">${a.title}</div>
+                        <div class="alert-message">${a.message}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // ============================================
+        // MEMBERS
+        // ============================================
+
+        function refreshMembersTable() {
+            const members = appData.members;
+
+            // Update stats
+            document.getElementById('members-total').textContent = members.length;
+            document.getElementById('members-active').textContent = members.filter(m => m.subscription_status === 'active').length;
+            document.getElementById('members-pastdue').textContent = members.filter(m => m.subscription_status === 'past_due').length;
+
+            // Calculate canceled this month
+            const thisMonth = new Date();
+            thisMonth.setDate(1);
+            const canceledThisMonth = members.filter(m =>
+                m.subscription_status === 'canceled' &&
+                m.updated_at && new Date(m.updated_at) >= thisMonth
+            ).length;
+            document.getElementById('members-canceled').textContent = canceledThisMonth;
+
+            // Render table
+            filterMembers();
+        }
+
+        function filterMembers() {
+            const search = (document.getElementById('member-search').value || '').toLowerCase();
+            const statusFilter = document.getElementById('member-status-filter').value;
+
+            let filtered = appData.members;
+
+            if (search) {
+                filtered = filtered.filter(m =>
+                    (m.name || '').toLowerCase().includes(search) ||
+                    (m.email || '').toLowerCase().includes(search)
+                );
+            }
+
+            if (statusFilter) {
+                filtered = filtered.filter(m => m.subscription_status === statusFilter);
+            }
+
+            renderMembersTable(filtered);
+        }
+
+        function renderMembersTable(members) {
+            const tbody = document.getElementById('members-table-body');
+
+            if (members.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="text-center text-muted" style="padding: 3rem;">
+                            ${appData.members.length === 0
+                                ? 'No members yet. Import your Kajabi CSV to get started.'
+                                : 'No members match your filters.'}
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = members.map(m => `
+                <tr>
+                    <td><strong>${m.name || 'Unknown'}</strong></td>
+                    <td>${m.email || '-'}</td>
+                    <td>${m.subscription_plan || '-'}</td>
+                    <td>$${formatCurrency(m.subscription_amount)}</td>
+                    <td>${getStatusBadge(m.subscription_status)}</td>
+                    <td>${m.last_payment_date ? formatDate(m.last_payment_date) : '-'}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline" onclick="viewMember('${m.id}')">View</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function getStatusBadge(status) {
+            const badges = {
+                'active': '<span class="badge badge-success">Active</span>',
+                'past_due': '<span class="badge badge-warning">Past Due</span>',
+                'canceled': '<span class="badge badge-danger">Canceled</span>',
+                'trialing': '<span class="badge badge-info">Trialing</span>',
+                'paused': '<span class="badge badge-neutral">Paused</span>'
+            };
+            return badges[status] || '<span class="badge badge-neutral">Unknown</span>';
+        }
+
+        function viewMember(memberId) {
+            // TODO: Open member detail modal
+            alert('Member detail view coming in Phase 2');
+        }
+
+        // ============================================
+        // CSV IMPORT
+        // ============================================
+
+        function importKajabiCSV() {
+            const fileInput = document.getElementById('kajabi-file');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                alert('Please select a CSV file.');
+                return;
+            }
+
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    processKajabiImport(results.data);
+                    closeModal('import-kajabi-modal');
+                    fileInput.value = '';
+                },
+                error: function(error) {
+                    alert('Error parsing CSV: ' + error.message);
+                }
+            });
+        }
+
+        function processKajabiImport(data) {
+            let imported = 0;
+            let updated = 0;
+            let skipped = 0;
+
+            data.forEach(row => {
+                // Try common Kajabi column names
+                const email = row['Email'] || row['email'] || row['Email Address'];
+                if (!email) {
+                    skipped++;
+                    return;
+                }
+
+                const memberData = {
+                    id: generateId(),
+                    email: email.toLowerCase().trim(),
+                    name: row['Full Name'] || row['Name'] || row['First Name'] + ' ' + (row['Last Name'] || ''),
+                    subscription_plan: row['Offer Name'] || row['Product'] || row['Membership'],
+                    subscription_amount: parseFloat(row['Amount'] || row['Price'] || 0),
+                    subscription_status: mapKajabiStatus(row['Subscription Status'] || row['Status']),
+                    join_date: row['Created At'] || row['Joined'] || new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                };
+
+                // Check if member exists
+                const existingIndex = appData.members.findIndex(m => m.email === memberData.email);
+                if (existingIndex >= 0) {
+                    // Update existing
+                    appData.members[existingIndex] = { ...appData.members[existingIndex], ...memberData };
+                    updated++;
+                } else {
+                    // Add new
+                    appData.members.push(memberData);
+                    imported++;
+                }
+            });
+
+            // Log import
+            appData.importLogs.push({
+                id: generateId(),
+                import_type: 'kajabi_members',
+                file_name: document.getElementById('kajabi-file').files[0]?.name,
+                records_imported: imported,
+                records_updated: updated,
+                records_skipped: skipped,
+                imported_by: currentUser.name,
+                imported_at: new Date().toISOString()
+            });
+
+            saveToLocalStorage();
+            refreshMembersTable();
+            refreshDashboard();
+
+            document.getElementById('kajabi-last-import').textContent = 'Just now';
+
+            alert(`Import complete!\n\nImported: ${imported}\nUpdated: ${updated}\nSkipped: ${skipped}`);
+        }
+
+        function mapKajabiStatus(status) {
+            if (!status) return 'active';
+            const s = status.toLowerCase();
+            if (s.includes('active')) return 'active';
+            if (s.includes('cancel')) return 'canceled';
+            if (s.includes('past') || s.includes('due')) return 'past_due';
+            if (s.includes('trial')) return 'trialing';
+            if (s.includes('pause')) return 'paused';
+            return 'active';
+        }
+
+        function importStripeCSV(account) {
+            const fileId = account === 'reignation' ? 'stripe1-file' : 'stripe2-file';
+            const modalId = account === 'reignation' ? 'import-stripe1-modal' : 'import-stripe2-modal';
+            const fileInput = document.getElementById(fileId);
+            const file = fileInput.files[0];
+
+            if (!file) {
+                alert('Please select a CSV file.');
+                return;
+            }
+
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    processStripeImport(results.data, account);
+                    closeModal(modalId);
+                    fileInput.value = '';
+                },
+                error: function(error) {
+                    alert('Error parsing CSV: ' + error.message);
+                }
+            });
+        }
+
+        function processStripeImport(data, account) {
+            let imported = 0;
+            let skipped = 0;
+
+            data.forEach(row => {
+                // Try common Stripe column names
+                const stripeId = row['id'] || row['ID'] || row['Payment ID'];
+                const amount = parseFloat(row['Amount'] || row['amount'] || 0);
+
+                if (!stripeId || !amount) {
+                    skipped++;
+                    return;
+                }
+
+                // Check for duplicate
+                if (appData.stripeTransactions.some(t => t.stripe_id === stripeId)) {
+                    skipped++;
+                    return;
+                }
+
+                const transaction = {
+                    id: generateId(),
+                    stripe_id: stripeId,
+                    stripe_account: account,
+                    member_email: (row['Customer Email'] || row['customer_email'] || row['Email'] || '').toLowerCase().trim(),
+                    customer_name: row['Customer Name'] || row['customer_name'] || row['Name'],
+                    amount: amount / 100, // Stripe amounts are in cents
+                    fee: parseFloat(row['Fee'] || row['fee'] || 0) / 100,
+                    status: mapStripeStatus(row['Status'] || row['status']),
+                    transaction_date: row['Created (UTC)'] || row['created'] || row['Date'] || new Date().toISOString(),
+                    description: row['Description'] || row['description']
+                };
+
+                transaction.net_amount = transaction.amount - transaction.fee;
+
+                // Try to match with member
+                const member = appData.members.find(m => m.email === transaction.member_email);
+                if (member) {
+                    transaction.member_id = member.id;
+
+                    // Update member's last payment date if this is newer
+                    if (transaction.status === 'succeeded') {
+                        const txnDate = new Date(transaction.transaction_date);
+                        const lastPayment = member.last_payment_date ? new Date(member.last_payment_date) : new Date(0);
+                        if (txnDate > lastPayment) {
+                            member.last_payment_date = transaction.transaction_date;
+                        }
+                    }
+                }
+
+                appData.stripeTransactions.push(transaction);
+                imported++;
+            });
+
+            // Log import
+            appData.importLogs.push({
+                id: generateId(),
+                import_type: `stripe_${account}`,
+                file_name: document.getElementById(account === 'reignation' ? 'stripe1-file' : 'stripe2-file').files[0]?.name,
+                records_imported: imported,
+                records_skipped: skipped,
+                imported_by: currentUser.name,
+                imported_at: new Date().toISOString()
+            });
+
+            saveToLocalStorage();
+            refreshDashboard();
+
+            const lastImportId = account === 'reignation' ? 'stripe1-last-import' : 'stripe2-last-import';
+            document.getElementById(lastImportId).textContent = 'Just now';
+
+            alert(`Stripe import complete!\n\nImported: ${imported}\nSkipped (duplicates): ${skipped}`);
+        }
+
+        function mapStripeStatus(status) {
+            if (!status) return 'succeeded';
+            const s = status.toLowerCase();
+            if (s.includes('succeed') || s.includes('paid')) return 'succeeded';
+            if (s.includes('fail')) return 'failed';
+            if (s.includes('pending')) return 'pending';
+            if (s.includes('refund')) return 'refunded';
+            if (s.includes('dispute')) return 'disputed';
+            return 'succeeded';
+        }
+
+        // ============================================
+        // RECONCILIATION
+        // ============================================
+
+        function runReconciliation() {
+            if (appData.members.length === 0) {
+                alert('Please import Kajabi members first.');
+                return;
+            }
+
+            if (appData.stripeTransactions.length === 0) {
+                alert('Please import Stripe transactions first.');
+                return;
+            }
+
+            const discrepancies = [];
+            const now = new Date();
+            const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+            // Check each active member for payments
+            appData.members.filter(m => m.subscription_status === 'active').forEach(member => {
+                const memberTransactions = appData.stripeTransactions.filter(t =>
+                    t.member_email === member.email &&
+                    new Date(t.transaction_date) >= thirtyDaysAgo
+                );
+
+                const successfulPayments = memberTransactions.filter(t => t.status === 'succeeded');
+                const failedPayments = memberTransactions.filter(t => t.status === 'failed');
+
+                // Check for failed payments
+                if (failedPayments.length > 0) {
+                    discrepancies.push({
+                        id: generateId(),
+                        member_id: member.id,
+                        member_email: member.email,
+                        member_name: member.name,
+                        discrepancy_type: 'failed_payment',
+                        expected_amount: member.subscription_amount,
+                        actual_amount: 0,
+                        difference: member.subscription_amount,
+                        status: 'open',
+                        priority: 'high',
+                        created_at: new Date().toISOString()
+                    });
+                }
+
+                // Check for missing payments (active member with no recent payment)
+                if (successfulPayments.length === 0 && member.subscription_amount > 0) {
+                    discrepancies.push({
+                        id: generateId(),
+                        member_id: member.id,
+                        member_email: member.email,
+                        member_name: member.name,
+                        discrepancy_type: 'missing_stripe_payment',
+                        expected_amount: member.subscription_amount,
+                        actual_amount: 0,
+                        difference: member.subscription_amount,
+                        status: 'open',
+                        priority: 'medium',
+                        created_at: new Date().toISOString()
+                    });
+                }
+            });
+
+            // Check for Stripe transactions without members
+            appData.stripeTransactions
+                .filter(t => t.status === 'succeeded' && new Date(t.transaction_date) >= thirtyDaysAgo)
+                .forEach(txn => {
+                    if (!appData.members.some(m => m.email === txn.member_email)) {
+                        discrepancies.push({
+                            id: generateId(),
+                            member_email: txn.member_email,
+                            member_name: txn.customer_name,
+                            discrepancy_type: 'missing_kajabi_record',
+                            expected_amount: 0,
+                            actual_amount: txn.amount,
+                            difference: txn.amount,
+                            stripe_account: txn.stripe_account,
+                            status: 'open',
+                            priority: 'low',
+                            created_at: new Date().toISOString()
+                        });
+                    }
+                });
+
+            // Clear old discrepancies and add new ones
+            appData.discrepancies = discrepancies;
+            saveToLocalStorage();
+
+            refreshDashboard();
+            renderDiscrepanciesTable();
+
+            alert(`Reconciliation complete!\n\nFound ${discrepancies.length} issues.`);
+        }
+
+        function renderDiscrepanciesTable() {
+            const tbody = document.getElementById('discrepancies-table-body');
+            const filter = document.getElementById('discrepancy-filter').value;
+
+            let discrepancies = appData.discrepancies.filter(d => d.status === 'open');
+
+            if (filter) {
+                discrepancies = discrepancies.filter(d => d.discrepancy_type === filter);
+            }
+
+            if (discrepancies.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center text-muted" style="padding: 3rem;">
+                            No discrepancies found. Run a reconciliation to check for issues.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = discrepancies.map(d => `
+                <tr>
+                    <td>
+                        <strong>${d.member_name || 'Unknown'}</strong><br>
+                        <span class="text-muted" style="font-size: 0.75rem;">${d.member_email || '-'}</span>
+                    </td>
+                    <td>${formatDiscrepancyType(d.discrepancy_type)}</td>
+                    <td>$${formatCurrency(d.expected_amount)}</td>
+                    <td>$${formatCurrency(d.actual_amount)}</td>
+                    <td><span class="badge badge-${d.priority === 'high' ? 'danger' : d.priority === 'medium' ? 'warning' : 'info'}">${d.priority}</span></td>
+                    <td>
+                        <button class="btn btn-sm btn-outline" onclick="resolveDiscrepancy('${d.id}')">Resolve</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function formatDiscrepancyType(type) {
+            const types = {
+                'missing_kajabi_record': 'Not in Kajabi',
+                'missing_stripe_payment': 'Missing Payment',
+                'amount_mismatch': 'Amount Mismatch',
+                'failed_payment': 'Failed Payment',
+                'duplicate_charge': 'Duplicate',
+                'member_not_in_stripe': 'Not in Stripe'
+            };
+            return types[type] || type;
+        }
+
+        function resolveDiscrepancy(id) {
+            const discrepancy = appData.discrepancies.find(d => d.id === id);
+            if (discrepancy) {
+                discrepancy.status = 'resolved';
+                discrepancy.resolved_at = new Date().toISOString();
+                discrepancy.resolved_by = currentUser.name;
+                saveToLocalStorage();
+                renderDiscrepanciesTable();
+                refreshDashboard();
+            }
+        }
+
+        // ============================================
+        // DATA EXPORT
+        // ============================================
+
+        function exportMembers() {
+            if (appData.members.length === 0) {
+                alert('No members to export.');
+                return;
+            }
+
+            const csv = Papa.unparse(appData.members);
+            downloadFile(csv, 'mastermind-members.csv', 'text/csv');
+        }
+
+        function exportAllData() {
+            const data = JSON.stringify(appData, null, 2);
+            downloadFile(data, 'mastermind-billing-backup.json', 'application/json');
+        }
+
+        function downloadFile(content, filename, mimeType) {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // ============================================
+        // UTILITY FUNCTIONS
+        // ============================================
+
+        function generateId() {
+            return 'id_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+        }
+
+        function formatCurrency(amount) {
+            return (parseFloat(amount) || 0).toLocaleString('en-US', {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            });
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return '-';
+            const date = new Date(dateString);
+            return date.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric'
+            });
+        }
+
+        function getInitials(name) {
+            if (!name) return '?';
+            return name.split(' ')
+                .map(part => part.charAt(0).toUpperCase())
+                .slice(0, 2)
+                .join('');
+        }
+    </script>
+</body>
+</html>
