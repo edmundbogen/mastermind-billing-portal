@@ -1817,6 +1817,23 @@
             updateSyncStatus('syncing');
 
             try {
+                // Sync users/passwords
+                for (const [username, userData] of Object.entries(users)) {
+                    const userRecord = {
+                        username: username,
+                        name: userData.name,
+                        password_hash: userData.password,
+                        role: userData.role,
+                        updated_at: new Date().toISOString()
+                    };
+
+                    const { error } = await supabaseClient
+                        .from('billing_users')
+                        .upsert(userRecord, { onConflict: 'username' });
+
+                    if (error) console.warn('User sync error:', error);
+                }
+
                 // Sync members
                 if (appData.members && appData.members.length > 0) {
                     for (const member of appData.members) {
@@ -1938,6 +1955,28 @@
             updateSyncStatus('syncing');
 
             try {
+                // Fetch users/passwords from Supabase
+                const { data: cloudUsers, error: usersError } = await supabaseClient
+                    .from('billing_users')
+                    .select('*');
+
+                if (usersError) {
+                    console.warn('Failed to fetch users:', usersError);
+                } else if (cloudUsers && cloudUsers.length > 0) {
+                    // Update local users with cloud data
+                    cloudUsers.forEach(u => {
+                        users[u.username] = {
+                            name: u.name,
+                            role: u.role,
+                            password: u.password_hash,
+                            initials: u.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
+                        };
+                    });
+                    // Save updated users to localStorage
+                    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+                    console.log('Users synced from cloud');
+                }
+
                 // Fetch members from Supabase
                 const { data: members, error: membersError } = await supabaseClient
                     .from('members')
