@@ -385,8 +385,24 @@ GROUP BY subscription_status;
 -- Open discrepancies view
 CREATE OR REPLACE VIEW open_discrepancies AS
 SELECT
-    d.*,
-    m.name AS member_name,
+    d.id,
+    d.member_id,
+    d.member_email,
+    d.member_name,
+    d.discrepancy_type,
+    d.expected_amount,
+    d.actual_amount,
+    d.difference,
+    d.period_start,
+    d.period_end,
+    d.stripe_account,
+    d.related_stripe_id,
+    d.status,
+    d.priority,
+    d.resolution_notes,
+    d.resolved_by,
+    d.created_at,
+    d.resolved_at,
     m.subscription_plan,
     m.subscription_amount
 FROM billing_discrepancies d

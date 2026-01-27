@@ -351,6 +351,16 @@
             background: var(--danger);
         }
 
+        .sync-dot.syncing {
+            background: var(--brand-primary);
+            animation: pulse 1s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+        }
+
         .user-menu {
             display: flex;
             align-items: center;
@@ -1145,7 +1155,7 @@
                     <span class="header-title">Billing Portal</span>
                 </div>
                 <div class="header-right">
-                    <div class="sync-status">
+                    <div class="sync-status" onclick="triggerManualSync()" style="cursor: pointer;" title="Click to sync now">
                         <span class="sync-dot" id="sync-dot"></span>
                         <span id="sync-text">Synced</span>
                     </div>
@@ -1669,9 +1679,9 @@
         // CONFIGURATION
         // ============================================
 
-        // Supabase Configuration (Update with your credentials)
-        const SUPABASE_URL = 'YOUR_SUPABASE_URL';
-        const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+        // Supabase Configuration
+        const SUPABASE_URL = 'https://tnnymwtjcfedprfqwprd.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_GAw0PC_U6vgETPm8ct3uMQ_EcU-5sUf';
 
         // Initialize Supabase client
         let supabaseClient = null;
@@ -1723,7 +1733,7 @@
             setupEventListeners();
         });
 
-        function initSupabase() {
+        async function initSupabase() {
             if (SUPABASE_URL !== 'YOUR_SUPABASE_URL' &&
                 typeof window !== 'undefined' &&
                 window.supabase &&
@@ -1733,9 +1743,12 @@
                     syncStatus = 'online';
                     updateSyncStatus();
                     console.log('Supabase connected');
+                    // Initial sync from cloud
+                    await fullSync();
                 } catch (e) {
                     console.warn('Supabase initialization failed:', e);
                     syncStatus = 'offline';
+                    updateSyncStatus();
                 }
             } else {
                 syncStatus = 'offline';
@@ -1744,11 +1757,18 @@
             }
         }
 
-        function updateSyncStatus() {
+        function updateSyncStatus(status) {
+            if (status) syncStatus = status;
+
             const dot = document.getElementById('sync-dot');
             const text = document.getElementById('sync-text');
 
-            if (syncStatus === 'online') {
+            if (!dot || !text) return;
+
+            if (syncStatus === 'syncing') {
+                dot.className = 'sync-dot syncing';
+                text.textContent = 'Syncing...';
+            } else if (syncStatus === 'online') {
                 dot.className = 'sync-dot';
                 text.textContent = 'Synced';
             } else if (syncStatus === 'offline') {
@@ -1777,6 +1797,296 @@
         function saveToLocalStorage() {
             localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
             localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(appData));
+            // Trigger cloud sync after saving locally
+            if (supabaseClient && syncStatus === 'online') {
+                syncToSupabase();
+            }
+        }
+
+        // ============================================
+        // SUPABASE SYNC FUNCTIONS
+        // ============================================
+
+        let isSyncing = false;
+        let lastSyncTime = null;
+
+        async function syncToSupabase() {
+            if (!supabaseClient || isSyncing) return;
+
+            isSyncing = true;
+            updateSyncStatus('syncing');
+
+            try {
+                // Sync members
+                if (appData.members && appData.members.length > 0) {
+                    for (const member of appData.members) {
+                        const memberData = {
+                            email: member.email,
+                            name: member.name || member.fullName || 'Unknown',
+                            kajabi_id: member.kajabiId || null,
+                            subscription_plan: member.plan || member.offerName || null,
+                            subscription_amount: parseFloat(member.amount) || 0,
+                            billing_frequency: member.billingFrequency || 'monthly',
+                            subscription_status: member.status || 'active',
+                            join_date: member.joinDate || member.createdAt || null,
+                            last_payment_date: member.lastPaymentDate || null,
+                            total_paid: parseFloat(member.totalPaid) || 0,
+                            notes: member.notes || null,
+                            updated_at: new Date().toISOString()
+                        };
+
+                        const { error } = await supabaseClient
+                            .from('members')
+                            .upsert(memberData, { onConflict: 'email' });
+
+                        if (error) console.warn('Member sync error:', error);
+                    }
+                }
+
+                // Sync stripe transactions
+                if (appData.stripeTransactions && appData.stripeTransactions.length > 0) {
+                    for (const txn of appData.stripeTransactions) {
+                        const txnData = {
+                            stripe_id: txn.id || txn.stripeId || `local_${Date.now()}_${Math.random()}`,
+                            stripe_account: txn.account || txn.stripeAccount || 'reignation',
+                            member_email: txn.email || txn.customerEmail || null,
+                            customer_name: txn.name || txn.customerName || null,
+                            amount: parseFloat(txn.amount) || 0,
+                            fee: parseFloat(txn.fee) || 0,
+                            net_amount: parseFloat(txn.netAmount) || parseFloat(txn.amount) - parseFloat(txn.fee) || 0,
+                            status: txn.status || 'succeeded',
+                            transaction_date: txn.date || txn.created || new Date().toISOString(),
+                            description: txn.description || null,
+                            product_name: txn.productName || null
+                        };
+
+                        const { error } = await supabaseClient
+                            .from('stripe_transactions')
+                            .upsert(txnData, { onConflict: 'stripe_id' });
+
+                        if (error) console.warn('Transaction sync error:', error);
+                    }
+                }
+
+                // Sync discrepancies
+                if (appData.discrepancies && appData.discrepancies.length > 0) {
+                    for (const disc of appData.discrepancies) {
+                        const discData = {
+                            member_email: disc.email || disc.memberEmail || null,
+                            member_name: disc.name || disc.memberName || null,
+                            discrepancy_type: disc.type || disc.discrepancyType || 'amount_mismatch',
+                            expected_amount: parseFloat(disc.expectedAmount) || null,
+                            actual_amount: parseFloat(disc.actualAmount) || null,
+                            difference: parseFloat(disc.difference) || null,
+                            stripe_account: disc.stripeAccount || null,
+                            status: disc.status || 'open',
+                            priority: disc.priority || 'medium',
+                            resolution_notes: disc.notes || disc.resolutionNotes || null
+                        };
+
+                        const { error } = await supabaseClient
+                            .from('billing_discrepancies')
+                            .insert(discData);
+
+                        if (error && !error.message.includes('duplicate')) {
+                            console.warn('Discrepancy sync error:', error);
+                        }
+                    }
+                }
+
+                // Sync import logs
+                if (appData.importLogs && appData.importLogs.length > 0) {
+                    for (const log of appData.importLogs) {
+                        const logData = {
+                            import_type: log.type || log.importType || 'kajabi_members',
+                            file_name: log.fileName || log.filename || null,
+                            records_total: log.total || log.recordsTotal || 0,
+                            records_imported: log.imported || log.recordsImported || 0,
+                            records_skipped: log.skipped || log.recordsSkipped || 0,
+                            imported_by: log.importedBy || currentUser?.name || null,
+                            imported_at: log.date || log.importedAt || new Date().toISOString()
+                        };
+
+                        const { error } = await supabaseClient
+                            .from('import_logs')
+                            .insert(logData);
+
+                        if (error && !error.message.includes('duplicate')) {
+                            console.warn('Import log sync error:', error);
+                        }
+                    }
+                }
+
+                lastSyncTime = new Date();
+                syncStatus = 'online';
+                updateSyncStatus();
+                console.log('Sync to Supabase completed:', lastSyncTime);
+
+            } catch (error) {
+                console.error('Sync to Supabase failed:', error);
+                syncStatus = 'error';
+                updateSyncStatus();
+            } finally {
+                isSyncing = false;
+            }
+        }
+
+        async function syncFromSupabase() {
+            if (!supabaseClient || isSyncing) return;
+
+            isSyncing = true;
+            updateSyncStatus('syncing');
+
+            try {
+                // Fetch members from Supabase
+                const { data: members, error: membersError } = await supabaseClient
+                    .from('members')
+                    .select('*')
+                    .order('updated_at', { ascending: false });
+
+                if (membersError) {
+                    console.warn('Failed to fetch members:', membersError);
+                } else if (members && members.length > 0) {
+                    // Merge with local data - Supabase takes precedence
+                    const memberMap = new Map();
+
+                    // Add local members first
+                    appData.members.forEach(m => {
+                        if (m.email) memberMap.set(m.email.toLowerCase(), m);
+                    });
+
+                    // Override/add with Supabase members
+                    members.forEach(m => {
+                        memberMap.set(m.email.toLowerCase(), {
+                            id: m.id,
+                            email: m.email,
+                            name: m.name,
+                            fullName: m.name,
+                            kajabiId: m.kajabi_id,
+                            plan: m.subscription_plan,
+                            offerName: m.subscription_plan,
+                            amount: m.subscription_amount,
+                            billingFrequency: m.billing_frequency,
+                            status: m.subscription_status,
+                            joinDate: m.join_date,
+                            createdAt: m.created_at,
+                            lastPaymentDate: m.last_payment_date,
+                            totalPaid: m.total_paid,
+                            notes: m.notes
+                        });
+                    });
+
+                    appData.members = Array.from(memberMap.values());
+                }
+
+                // Fetch stripe transactions
+                const { data: transactions, error: txnError } = await supabaseClient
+                    .from('stripe_transactions')
+                    .select('*')
+                    .order('transaction_date', { ascending: false });
+
+                if (txnError) {
+                    console.warn('Failed to fetch transactions:', txnError);
+                } else if (transactions && transactions.length > 0) {
+                    const txnMap = new Map();
+
+                    appData.stripeTransactions.forEach(t => {
+                        const key = t.id || t.stripeId;
+                        if (key) txnMap.set(key, t);
+                    });
+
+                    transactions.forEach(t => {
+                        txnMap.set(t.stripe_id, {
+                            id: t.stripe_id,
+                            stripeId: t.stripe_id,
+                            account: t.stripe_account,
+                            stripeAccount: t.stripe_account,
+                            email: t.member_email,
+                            customerEmail: t.member_email,
+                            name: t.customer_name,
+                            customerName: t.customer_name,
+                            amount: t.amount,
+                            fee: t.fee,
+                            netAmount: t.net_amount,
+                            status: t.status,
+                            date: t.transaction_date,
+                            created: t.transaction_date,
+                            description: t.description,
+                            productName: t.product_name
+                        });
+                    });
+
+                    appData.stripeTransactions = Array.from(txnMap.values());
+                }
+
+                // Fetch discrepancies
+                const { data: discrepancies, error: discError } = await supabaseClient
+                    .from('billing_discrepancies')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+
+                if (discError) {
+                    console.warn('Failed to fetch discrepancies:', discError);
+                } else if (discrepancies) {
+                    appData.discrepancies = discrepancies.map(d => ({
+                        id: d.id,
+                        email: d.member_email,
+                        memberEmail: d.member_email,
+                        name: d.member_name,
+                        memberName: d.member_name,
+                        type: d.discrepancy_type,
+                        discrepancyType: d.discrepancy_type,
+                        expectedAmount: d.expected_amount,
+                        actualAmount: d.actual_amount,
+                        difference: d.difference,
+                        stripeAccount: d.stripe_account,
+                        status: d.status,
+                        priority: d.priority,
+                        notes: d.resolution_notes,
+                        resolutionNotes: d.resolution_notes,
+                        createdAt: d.created_at
+                    }));
+                }
+
+                // Save merged data to localStorage
+                localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(appData));
+
+                lastSyncTime = new Date();
+                syncStatus = 'online';
+                updateSyncStatus();
+                console.log('Sync from Supabase completed:', lastSyncTime);
+
+                // Refresh UI if we're on a data-displaying tab
+                if (typeof renderMembers === 'function') renderMembers();
+                if (typeof updateDashboard === 'function') updateDashboard();
+
+            } catch (error) {
+                console.error('Sync from Supabase failed:', error);
+                syncStatus = 'error';
+                updateSyncStatus();
+            } finally {
+                isSyncing = false;
+            }
+        }
+
+        async function fullSync() {
+            if (!supabaseClient) {
+                console.log('Supabase not connected, skipping sync');
+                return;
+            }
+
+            // Pull from cloud first, then push local changes
+            await syncFromSupabase();
+            await syncToSupabase();
+        }
+
+        // Manual sync button handler
+        function triggerManualSync() {
+            if (supabaseClient) {
+                fullSync();
+            } else {
+                alert('Cloud sync is not available. Running in offline mode.');
+            }
         }
 
         function setupEventListeners() {
