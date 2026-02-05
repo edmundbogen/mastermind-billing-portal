@@ -2424,22 +2424,20 @@
                     .from('billing_users')
                     .select('*');
 
-                if (usersError) {
-                    console.warn('Failed to fetch users:', usersError);
-                } else if (cloudUsers && cloudUsers.length > 0) {
-                    // Update local users with cloud data
-                    cloudUsers.forEach(u => {
-                        users[u.username] = {
-                            name: u.name,
-                            role: u.role,
-                            password: u.password_hash,
-                            initials: u.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
-                        };
-                    });
-                    // Save updated users to localStorage
-                    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
-                    console.log('Users synced from cloud');
-                }
+                // DISABLED - Always use hardcoded password (which is: 1)
+                // if (usersError) {
+                //     console.warn('Failed to fetch users:', usersError);
+                // } else if (cloudUsers && cloudUsers.length > 0) {
+                //     cloudUsers.forEach(u => {
+                //         users[u.username] = {
+                //             name: u.name,
+                //             role: u.role,
+                //             password: u.password_hash,
+                //             initials: u.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
+                //         };
+                //     });
+                //     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+                // }
 
                 // Fetch members from Supabase
                 const { data: members, error: membersError } = await supabaseClient
