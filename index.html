@@ -2044,18 +2044,18 @@
         let supabaseClient = null;
         let syncStatus = 'offline';
 
-        // User credentials (stored locally, synced to Supabase when available)
+        // User credentials - PASSWORD IS: 1
         let users = {
             edmund: {
                 name: 'Edmund Bogen',
                 role: 'admin',
-                password: 'changeme',
+                password: '1',
                 initials: 'EB'
             },
             eytan: {
                 name: 'Eytan',
                 role: 'full_admin',
-                password: 'changeme',
+                password: '1',
                 initials: 'EY'
             }
         };
@@ -2176,8 +2176,9 @@
         // ============================================
 
         document.addEventListener('DOMContentLoaded', function() {
-            // ONE-TIME PASSWORD RESET - Remove this line after logging in
+            // FORCE FRESH LOGIN - clear all stored auth
             localStorage.removeItem('mastermind_billing_users');
+            localStorage.removeItem('mastermind_billing_session');
 
             loadFromLocalStorage();
             initSupabase();
