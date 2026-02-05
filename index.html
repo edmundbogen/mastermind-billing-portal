@@ -2181,6 +2181,12 @@
             localStorage.removeItem('mastermind_billing_session');
 
             loadFromLocalStorage();
+
+            // ONE-TIME: Clear bank transactions only (keeps members/contacts)
+            appData.bankTransactions = [];
+            appData.stripePayoutMatches = [];
+            saveToLocalStorage();
+
             initSupabase();
             checkAuth();
             setupEventListeners();
