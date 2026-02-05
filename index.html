@@ -2233,11 +2233,8 @@
         }
 
         function loadFromLocalStorage() {
-            // Load users
-            const storedUsers = localStorage.getItem(STORAGE_KEYS.USERS);
-            if (storedUsers) {
-                users = JSON.parse(storedUsers);
-            }
+            // ALWAYS use hardcoded passwords - ignore stored users
+            // Password is: changeme
 
             // Load app data
             const storedData = localStorage.getItem(STORAGE_KEYS.DATA);
