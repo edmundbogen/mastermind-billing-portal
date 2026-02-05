@@ -1485,7 +1485,7 @@
                     </div>
                     <div class="quick-actions">
                         <button class="btn btn-primary" onclick="openModal('add-transaction-modal')">Add Transaction</button>
-                        <button class="btn btn-secondary" onclick="openModal('import-chase-modal')">Import Chase CSV</button>
+                        <button class="btn btn-secondary" onclick="openModal('import-chase-modal')">Import Chase Statement</button>
                     </div>
                 </div>
 
@@ -1860,10 +1860,10 @@
                 <button class="modal-close" onclick="closeModal('import-chase-modal')">&times;</button>
             </div>
             <div class="modal-body">
-                <p class="mb-2">Upload your Chase bank statement CSV export.</p>
+                <p class="mb-2">Upload your Chase bank statement (CSV or PDF).</p>
                 <div class="form-group">
-                    <label for="chase-file">CSV File</label>
-                    <input type="file" id="chase-file" accept=".csv">
+                    <label for="chase-file">Statement File (CSV or PDF)</label>
+                    <input type="file" id="chase-file" accept=".csv,.pdf">
                 </div>
                 <div class="form-group">
                     <label for="chase-account-name">Account Name (optional)</label>
@@ -1873,9 +1873,9 @@
                     <div class="alert-icon">&#128161;</div>
                     <div class="alert-content">
                         <div class="alert-message">
-                            <strong>How to export from Chase:</strong><br>
-                            Chase.com → Account Activity → Download Account Activity → CSV<br><br>
-                            <strong>Expected columns:</strong> Details, Posting Date, Description, Amount, Balance
+                            <strong>Supported formats:</strong><br>
+                            <strong>CSV:</strong> Chase.com → Account Activity → Download → CSV<br>
+                            <strong>PDF:</strong> Chase.com → Statements → Download Statement
                         </div>
                     </div>
                 </div>
@@ -1888,7 +1888,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal('import-chase-modal')">Cancel</button>
-                <button class="btn btn-primary" onclick="importChaseCSV()">Import</button>
+                <button class="btn btn-primary" onclick="importChaseFile()">Import</button>
             </div>
         </div>
     </div>
@@ -3468,6 +3468,26 @@
         // BOOKKEEPING FUNCTIONS
         // ============================================
 
+        function importChaseFile() {
+            const fileInput = document.getElementById('chase-file');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                alert('Please select a file.');
+                return;
+            }
+
+            const fileName = file.name.toLowerCase();
+
+            if (fileName.endsWith('.csv')) {
+                importChaseCSV();
+            } else if (fileName.endsWith('.pdf')) {
+                importChasePDF();
+            } else {
+                alert('Please select a CSV or PDF file.');
+            }
+        }
+
         function importChaseCSV() {
             const fileInput = document.getElementById('chase-file');
             const file = fileInput.files[0];
@@ -3489,6 +3509,203 @@
                     alert('Error parsing CSV: ' + error.message);
                 }
             });
+        }
+
+        async function importChasePDF() {
+            const fileInput = document.getElementById('chase-file');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                alert('Please select a PDF file.');
+                return;
+            }
+
+            try {
+                // Set up PDF.js worker
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+                let allText = '';
+                const transactions = [];
+
+                // Extract text from all pages
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    const pageText = textContent.items.map(item => item.str).join(' ');
+                    allText += pageText + '\n';
+                }
+
+                console.log('PDF text extracted:', allText.substring(0, 500));
+
+                // Parse Chase PDF statement format
+                // Chase statements typically have lines like:
+                // 01/15 STRIPE TRANSFER 1,234.56
+                // or with dates like 01/15/2024
+
+                const lines = allText.split(/\s+/);
+                let currentDate = null;
+                let i = 0;
+
+                // Common Chase PDF patterns
+                // Pattern 1: MM/DD Description Amount
+                // Pattern 2: MM/DD/YYYY Description Amount
+                const datePattern = /^(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)$/;
+                const amountPattern = /^-?\$?[\d,]+\.\d{2}$/;
+
+                // Try to find transaction patterns in the text
+                const transactionRegex = /(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s+(.+?)\s+(-?\$?[\d,]+\.\d{2})/g;
+                let match;
+
+                while ((match = transactionRegex.exec(allText)) !== null) {
+                    const dateStr = match[1];
+                    const description = match[2].trim();
+                    const amountStr = match[3];
+
+                    // Skip header rows and summary lines
+                    if (description.toLowerCase().includes('beginning balance') ||
+                        description.toLowerCase().includes('ending balance') ||
+                        description.toLowerCase().includes('account number') ||
+                        description.length < 3) {
+                        continue;
+                    }
+
+                    // Parse amount
+                    let amount = parseFloat(amountStr.replace(/[$,]/g, '')) || 0;
+                    const isDebit = amount < 0 || amountStr.startsWith('-');
+                    amount = Math.abs(amount);
+
+                    if (amount > 0 && description.length > 2) {
+                        transactions.push({
+                            date: dateStr,
+                            description: description.substring(0, 100), // Limit description length
+                            amount: amount,
+                            type: isDebit ? 'withdrawal' : 'deposit'
+                        });
+                    }
+                }
+
+                // If regex didn't find transactions, try line-by-line parsing
+                if (transactions.length === 0) {
+                    const lineRegex = /(\d{1,2}\/\d{1,2})\s+(.+?)\s+([\d,]+\.\d{2})\s*([\d,]+\.\d{2})?/g;
+                    while ((match = lineRegex.exec(allText)) !== null) {
+                        const dateStr = match[1];
+                        let description = match[2].trim();
+                        const amount1 = parseFloat(match[3].replace(/,/g, '')) || 0;
+                        const amount2 = match[4] ? parseFloat(match[4].replace(/,/g, '')) : null;
+
+                        // Chase PDFs sometimes have debit/credit in separate columns
+                        // Usually: Date | Description | Debit | Credit | Balance
+                        if (description.length > 2 && amount1 > 0) {
+                            transactions.push({
+                                date: dateStr,
+                                description: description.substring(0, 100),
+                                amount: amount1,
+                                type: amount2 !== null ? 'withdrawal' : 'deposit'
+                            });
+                        }
+                    }
+                }
+
+                if (transactions.length === 0) {
+                    alert('Could not parse transactions from this PDF.\n\nTry using the CSV export instead:\nChase.com → Account Activity → Download → CSV');
+                    return;
+                }
+
+                // Process the extracted transactions
+                processChasePDFImport(transactions);
+                closeModal('import-chase-modal');
+                fileInput.value = '';
+
+            } catch (error) {
+                console.error('PDF parsing error:', error);
+                alert('Error parsing PDF: ' + error.message + '\n\nTry using the CSV export instead.');
+            }
+        }
+
+        function processChasePDFImport(transactions) {
+            const accountName = document.getElementById('chase-account-name').value || 'Chase Business';
+            const autoCategorize = document.getElementById('chase-auto-categorize').checked;
+
+            let imported = 0;
+            let skipped = 0;
+            const currentYear = new Date().getFullYear();
+
+            transactions.forEach(txn => {
+                // Parse date - add year if not present
+                let dateStr = txn.date;
+                if (dateStr.split('/').length === 2) {
+                    dateStr = dateStr + '/' + currentYear;
+                }
+
+                let transactionDate;
+                try {
+                    const parts = dateStr.split('/');
+                    if (parts.length >= 3) {
+                        let year = parseInt(parts[2]);
+                        if (year < 100) year += 2000;
+                        transactionDate = new Date(year, parseInt(parts[0]) - 1, parseInt(parts[1]));
+                    } else {
+                        transactionDate = new Date();
+                    }
+                } catch (e) {
+                    transactionDate = new Date();
+                }
+
+                // Generate unique ID
+                const txnId = `chase_pdf_${transactionDate.toISOString().split('T')[0]}_${txn.description.substring(0, 15).replace(/\s+/g, '_')}_${txn.amount}`;
+
+                // Check for duplicate
+                if (appData.bankTransactions.some(t => t.id === txnId)) {
+                    skipped++;
+                    return;
+                }
+
+                // Auto-categorize if enabled
+                let categoryId = 'cat_uncategorized';
+                if (autoCategorize) {
+                    categoryId = autoCategorizeTransaction(txn.description, txn.type);
+                }
+
+                const transaction = {
+                    id: txnId,
+                    account: accountName,
+                    date: transactionDate.toISOString(),
+                    description: txn.description,
+                    amount: txn.amount,
+                    type: txn.type,
+                    balance: null,
+                    category_id: categoryId,
+                    details: 'PDF import',
+                    is_matched: false,
+                    matched_stripe_id: null,
+                    created_at: new Date().toISOString()
+                };
+
+                appData.bankTransactions.push(transaction);
+                imported++;
+            });
+
+            // Sort by date descending
+            appData.bankTransactions.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+            // Log import
+            appData.importLogs.push({
+                id: generateId(),
+                import_type: 'chase_bank_pdf',
+                file_name: document.getElementById('chase-file').files[0]?.name,
+                records_imported: imported,
+                records_skipped: skipped,
+                imported_by: currentUser?.name || 'System',
+                imported_at: new Date().toISOString()
+            });
+
+            saveToLocalStorage();
+            refreshBookkeeping();
+
+            alert(`Chase PDF import complete!\n\nImported: ${imported}\nSkipped (duplicates): ${skipped}`);
         }
 
         function processChaseImport(data) {
