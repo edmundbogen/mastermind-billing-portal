@@ -3721,18 +3721,32 @@
             let imported = 0;
             let skipped = 0;
 
-            // Debug: log first row to see column names
+            // Debug: log columns found
             if (data.length > 0) {
-                console.log('Chase CSV columns found:', Object.keys(data[0]));
+                const columns = Object.keys(data[0]);
+                console.log('Chase CSV columns found:', columns);
+                console.log('First row data:', data[0]);
+            }
+
+            // Helper to find column value (case-insensitive)
+            function getColumn(row, ...names) {
+                for (const name of names) {
+                    // Try exact match first
+                    if (row[name] !== undefined) return row[name];
+                    // Try case-insensitive
+                    const key = Object.keys(row).find(k => k.toLowerCase() === name.toLowerCase());
+                    if (key) return row[key];
+                }
+                return '';
             }
 
             data.forEach(row => {
-                // Chase CSV column variations
-                const dateStr = row['Posting Date'] || row['Post Date'] || row['Transaction Date'] || row['Date'];
-                const description = row['Description'] || row['Merchant Name'] || row['Payee'] || '';
-                const amountStr = row['Amount'] || row['Transaction Amount'] || '0';
-                const balanceStr = row['Balance'] || row['Running Balance'] || '';
-                const details = row['Details'] || row['Type'] || '';
+                // Chase CSV column variations (case-insensitive)
+                const dateStr = getColumn(row, 'Posting Date', 'Post Date', 'Transaction Date', 'Date', 'TransactionDate');
+                const description = getColumn(row, 'Description', 'Merchant Name', 'Payee', 'Memo', 'Name');
+                const amountStr = getColumn(row, 'Amount', 'Transaction Amount', 'Debit', 'Credit');
+                const balanceStr = getColumn(row, 'Balance', 'Running Balance', 'Running Bal');
+                const details = getColumn(row, 'Details', 'Type', 'Transaction Type', 'Check or Slip #');
 
                 if (!dateStr || !description) {
                     skipped++;
@@ -3811,7 +3825,12 @@
             saveToLocalStorage();
             refreshBookkeeping();
 
-            alert(`Chase import complete!\n\nImported: ${imported}\nSkipped (duplicates): ${skipped}\n\n${autoCategorize ? 'Transactions were auto-categorized.' : ''}`);
+            if (imported === 0 && data.length > 0) {
+                const columns = Object.keys(data[0]).join(', ');
+                alert(`No transactions imported!\n\nColumns found in your CSV:\n${columns}\n\nPlease share these column names so I can fix the import.`);
+            } else {
+                alert(`Chase import complete!\n\nImported: ${imported}\nSkipped (duplicates): ${skipped}\n\n${autoCategorize ? 'Transactions were auto-categorized.' : ''}`);
+            }
         }
 
         function autoCategorizeTransaction(description, type) {
