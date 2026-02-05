@@ -915,6 +915,42 @@
             color: var(--danger);
         }
 
+        /* General positive/negative styles */
+        .positive {
+            color: var(--success);
+        }
+
+        .negative {
+            color: var(--danger);
+        }
+
+        .stat-value.positive {
+            color: var(--success);
+        }
+
+        .stat-value.negative {
+            color: var(--danger);
+        }
+
+        td.positive {
+            color: var(--success);
+            font-weight: 600;
+        }
+
+        td.negative {
+            color: var(--danger);
+            font-weight: 600;
+        }
+
+        /* Utility margin classes */
+        .mt-2 {
+            margin-top: 1.5rem;
+        }
+
+        .mb-2 {
+            margin-bottom: 1.5rem;
+        }
+
         /* Quick Actions */
         .quick-actions {
             display: flex;
@@ -1449,18 +1485,162 @@
                     </div>
                     <div class="quick-actions">
                         <button class="btn btn-primary" onclick="openModal('add-transaction-modal')">Add Transaction</button>
-                        <button class="btn btn-secondary" onclick="openModal('import-statement-modal')">Import Statement</button>
+                        <button class="btn btn-secondary" onclick="openModal('import-chase-modal')">Import Chase CSV</button>
                     </div>
                 </div>
 
-                <!-- Coming Soon -->
-                <div class="card">
-                    <div class="card-body">
-                        <div class="empty-state">
-                            <div class="empty-state-icon">&#128218;</div>
-                            <div class="empty-state-title">Bookkeeping Module</div>
-                            <div class="empty-state-message">This section will include transaction tracking, expense categorization, and P&L reports.<br>Coming in Phase 5.</div>
+                <!-- P&L Summary Cards -->
+                <div class="stats-grid" id="pl-stats">
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-title">Total Income</span>
+                            <span class="stat-period" id="pl-period">This Month</span>
                         </div>
+                        <div class="stat-value positive" id="stat-total-income">$0</div>
+                        <div class="stat-footer">
+                            <span id="income-txn-count">0 deposits</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-title">Total Expenses</span>
+                        </div>
+                        <div class="stat-value negative" id="stat-total-expenses">$0</div>
+                        <div class="stat-footer">
+                            <span id="expense-txn-count">0 transactions</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-title">Net Profit/Loss</span>
+                        </div>
+                        <div class="stat-value" id="stat-net-pl">$0</div>
+                        <div class="stat-footer">
+                            <span id="pl-margin">0% margin</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-title">Stripe Matches</span>
+                        </div>
+                        <div class="stat-value" id="stat-stripe-matches">0/0</div>
+                        <div class="stat-footer">
+                            <span id="unmatched-payouts">0 unmatched payouts</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Period Selector -->
+                <div class="card mb-2">
+                    <div class="card-body" style="padding: 1rem 1.5rem;">
+                        <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+                            <label style="font-size: 0.875rem; font-weight: 500;">Period:</label>
+                            <select id="pl-period-select" style="padding: 0.5rem 1rem; border: 1px solid var(--gray-300); border-radius: var(--radius-md);" onchange="refreshBookkeeping()">
+                                <option value="this_month">This Month</option>
+                                <option value="last_month">Last Month</option>
+                                <option value="this_quarter">This Quarter</option>
+                                <option value="this_year">This Year</option>
+                                <option value="all_time">All Time</option>
+                            </select>
+                            <button class="btn btn-sm btn-outline" onclick="matchStripePayouts()">Match Stripe Payouts</button>
+                            <button class="btn btn-sm btn-outline" onclick="exportPLReport()">Export P&L Report</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Main Content Grid -->
+                <div class="grid-2">
+                    <!-- Transactions Table -->
+                    <div class="card" style="grid-column: span 2;">
+                        <div class="card-header">
+                            <h3 class="card-title">Bank Transactions</h3>
+                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                <input type="text" id="txn-search" placeholder="Search transactions..." style="padding: 0.5rem 1rem; border: 1px solid var(--gray-300); border-radius: var(--radius-md); width: 200px;" oninput="filterBankTransactions()">
+                                <select id="txn-type-filter" style="padding: 0.5rem 1rem; border: 1px solid var(--gray-300); border-radius: var(--radius-md);" onchange="filterBankTransactions()">
+                                    <option value="">All Types</option>
+                                    <option value="deposit">Deposits</option>
+                                    <option value="withdrawal">Withdrawals</option>
+                                </select>
+                                <select id="txn-category-filter" style="padding: 0.5rem 1rem; border: 1px solid var(--gray-300); border-radius: var(--radius-md);" onchange="filterBankTransactions()">
+                                    <option value="">All Categories</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Description</th>
+                                        <th>Category</th>
+                                        <th>Amount</th>
+                                        <th>Balance</th>
+                                        <th>Match</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bank-transactions-table">
+                                    <tr>
+                                        <td colspan="7" class="text-center text-muted" style="padding: 3rem;">
+                                            No bank transactions yet. Import a Chase CSV to get started.
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Category Breakdown -->
+                <div class="grid-2 mt-2">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Income by Category</h3>
+                        </div>
+                        <div class="card-body" id="income-breakdown">
+                            <div class="empty-state">
+                                <div class="empty-state-message">No income data yet</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Expenses by Category</h3>
+                        </div>
+                        <div class="card-body" id="expense-breakdown">
+                            <div class="empty-state">
+                                <div class="empty-state-message">No expense data yet</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stripe Payout Matching Section -->
+                <div class="card mt-2">
+                    <div class="card-header">
+                        <h3 class="card-title">Stripe Payout Matching</h3>
+                        <span class="badge badge-info" id="match-status">Pending</span>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Stripe Payout Date</th>
+                                    <th>Stripe Amount</th>
+                                    <th>Chase Deposit Date</th>
+                                    <th>Chase Amount</th>
+                                    <th>Difference</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="payout-match-table">
+                                <tr>
+                                    <td colspan="6" class="text-center text-muted" style="padding: 2rem;">
+                                        Click "Match Stripe Payouts" to find matching deposits
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -1533,8 +1713,9 @@
                     <h3 class="settings-title">Expense Categories</h3>
                     <div class="card">
                         <div class="card-body">
-                            <p class="text-muted mb-2">Manage expense categories for bookkeeping. Coming in Phase 5.</p>
-                            <button class="btn btn-secondary btn-sm" disabled>Manage Categories</button>
+                            <p class="text-muted mb-2">Manage expense categories for bookkeeping and vendor auto-categorization.</p>
+                            <button class="btn btn-secondary btn-sm" onclick="openModal('manage-categories-modal')">Manage Categories</button>
+                            <button class="btn btn-outline btn-sm" onclick="openModal('vendor-mappings-modal')" style="margin-left: 0.5rem;">Vendor Mappings</button>
                         </div>
                     </div>
                 </div>
@@ -1671,6 +1852,182 @@
         </div>
     </div>
 
+    <!-- Import Chase CSV Modal -->
+    <div class="modal-overlay" id="import-chase-modal">
+        <div class="modal" style="max-width: 550px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Import Chase Bank Statement</h3>
+                <button class="modal-close" onclick="closeModal('import-chase-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">Upload your Chase bank statement CSV export.</p>
+                <div class="form-group">
+                    <label for="chase-file">CSV File</label>
+                    <input type="file" id="chase-file" accept=".csv">
+                </div>
+                <div class="form-group">
+                    <label for="chase-account-name">Account Name (optional)</label>
+                    <input type="text" id="chase-account-name" placeholder="e.g., Business Checking">
+                </div>
+                <div class="alert alert-info">
+                    <div class="alert-icon">&#128161;</div>
+                    <div class="alert-content">
+                        <div class="alert-message">
+                            <strong>How to export from Chase:</strong><br>
+                            Chase.com → Account Activity → Download Account Activity → CSV<br><br>
+                            <strong>Expected columns:</strong> Details, Posting Date, Description, Amount, Balance
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                        <input type="checkbox" id="chase-auto-categorize" checked>
+                        Auto-categorize transactions by vendor
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('import-chase-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="importChaseCSV()">Import</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Transaction Modal -->
+    <div class="modal-overlay" id="add-transaction-modal">
+        <div class="modal" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Add Transaction</h3>
+                <button class="modal-close" onclick="closeModal('add-transaction-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="txn-date">Date</label>
+                    <input type="date" id="txn-date">
+                </div>
+                <div class="form-group">
+                    <label for="txn-description">Description</label>
+                    <input type="text" id="txn-description" placeholder="e.g., Kajabi Monthly Subscription">
+                </div>
+                <div class="form-group">
+                    <label for="txn-amount">Amount</label>
+                    <input type="number" id="txn-amount" step="0.01" placeholder="0.00">
+                </div>
+                <div class="form-group">
+                    <label for="txn-type">Type</label>
+                    <select id="txn-type">
+                        <option value="withdrawal">Expense (Withdrawal)</option>
+                        <option value="deposit">Income (Deposit)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="txn-new-category">Category</label>
+                    <select id="txn-new-category">
+                        <option value="">Select category...</option>
+                    </select>
+                </div>
+                <div class="form-group mb-0">
+                    <label for="txn-notes">Notes (optional)</label>
+                    <input type="text" id="txn-notes" placeholder="Additional notes...">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('add-transaction-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="addManualTransaction()">Add Transaction</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Transaction Category Modal -->
+    <div class="modal-overlay" id="edit-category-modal">
+        <div class="modal" style="max-width: 450px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Edit Category</h3>
+                <button class="modal-close" onclick="closeModal('edit-category-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">Transaction: <strong id="edit-cat-txn-desc">-</strong></p>
+                <div class="form-group">
+                    <label for="edit-cat-select">Category</label>
+                    <select id="edit-cat-select">
+                        <option value="">Select category...</option>
+                    </select>
+                </div>
+                <div class="form-group mb-0">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                        <input type="checkbox" id="edit-cat-remember">
+                        Remember this category for similar transactions
+                    </label>
+                </div>
+                <input type="hidden" id="edit-cat-txn-id">
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('edit-category-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveTransactionCategory()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manage Categories Modal -->
+    <div class="modal-overlay" id="manage-categories-modal">
+        <div class="modal" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Manage Categories</h3>
+                <button class="modal-close" onclick="closeModal('manage-categories-modal')">&times;</button>
+            </div>
+            <div class="modal-body" style="max-height: 400px; overflow-y: auto;">
+                <div id="categories-list">
+                    <!-- Populated by JS -->
+                </div>
+                <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--gray-200);">
+                    <h4 style="font-size: 0.875rem; margin-bottom: 0.75rem;">Add New Category</h4>
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <input type="text" id="new-cat-name" placeholder="Category name" style="flex: 1; min-width: 150px; padding: 0.5rem;">
+                        <select id="new-cat-type" style="padding: 0.5rem;">
+                            <option value="expense">Expense</option>
+                            <option value="income">Income</option>
+                        </select>
+                        <input type="color" id="new-cat-color" value="#6b7280" style="width: 40px; height: 36px; padding: 2px;">
+                        <button class="btn btn-primary btn-sm" onclick="addCategory()">Add</button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('manage-categories-modal')">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Vendor Mappings Modal -->
+    <div class="modal-overlay" id="vendor-mappings-modal">
+        <div class="modal" style="max-width: 650px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Vendor Auto-Categorization</h3>
+                <button class="modal-close" onclick="closeModal('vendor-mappings-modal')">&times;</button>
+            </div>
+            <div class="modal-body" style="max-height: 400px; overflow-y: auto;">
+                <p class="text-muted mb-2">When a transaction description contains these keywords, it will be auto-categorized.</p>
+                <div id="vendor-mappings-list" style="margin-top: 1rem;">
+                    <!-- Populated by JS -->
+                </div>
+                <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--gray-200);">
+                    <h4 style="font-size: 0.875rem; margin-bottom: 0.75rem;">Add New Mapping</h4>
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <input type="text" id="new-vendor-keyword" placeholder="Keyword (e.g., netflix)" style="flex: 1; min-width: 120px; padding: 0.5rem;">
+                        <select id="new-vendor-category" style="flex: 1; min-width: 150px; padding: 0.5rem;">
+                            <option value="">Select category...</option>
+                        </select>
+                        <button class="btn btn-primary btn-sm" onclick="addVendorMapping()">Add</button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="resetVendorMappings()">Reset to Defaults</button>
+                <button class="btn btn-secondary" onclick="closeModal('vendor-mappings-modal')">Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ============================================
          JAVASCRIPT
          ============================================ -->
@@ -1712,8 +2069,100 @@
             stripeTransactions: [],
             discrepancies: [],
             importLogs: [],
-            settings: {}
+            settings: {},
+            // Bookkeeping data
+            bankTransactions: [],
+            bankStatements: [],
+            expenseCategories: getDefaultCategories(),
+            vendorMappings: getDefaultVendorMappings(),
+            stripePayoutMatches: []
         };
+
+        // Default expense categories
+        function getDefaultCategories() {
+            return [
+                { id: 'cat_income_mastermind', name: 'Mastermind Subscriptions', type: 'income', color: '#059669' },
+                { id: 'cat_income_coaching', name: 'Coaching Revenue', type: 'income', color: '#10b981' },
+                { id: 'cat_income_speaking', name: 'Speaking Fees', type: 'income', color: '#34d399' },
+                { id: 'cat_income_affiliate', name: 'Affiliate Income', type: 'income', color: '#6ee7b7' },
+                { id: 'cat_income_stripe', name: 'Stripe Payout', type: 'income', color: '#635bff' },
+                { id: 'cat_income_other', name: 'Other Income', type: 'income', color: '#a7f3d0' },
+                { id: 'cat_exp_kajabi', name: 'Kajabi Platform', type: 'expense', color: '#dc2626' },
+                { id: 'cat_exp_ai', name: 'AI Tools', type: 'expense', color: '#ef4444' },
+                { id: 'cat_exp_software', name: 'Software Subscriptions', type: 'expense', color: '#f87171' },
+                { id: 'cat_exp_contractors', name: 'Contractors/VA', type: 'expense', color: '#fca5a5' },
+                { id: 'cat_exp_marketing', name: 'Marketing', type: 'expense', color: '#d97706' },
+                { id: 'cat_exp_travel', name: 'Travel', type: 'expense', color: '#f59e0b' },
+                { id: 'cat_exp_professional', name: 'Professional Services', type: 'expense', color: '#fbbf24' },
+                { id: 'cat_exp_office', name: 'Office Equipment', type: 'expense', color: '#fcd34d' },
+                { id: 'cat_exp_bank_fees', name: 'Bank Fees', type: 'expense', color: '#6b7280' },
+                { id: 'cat_exp_refunds', name: 'Refunds', type: 'expense', color: '#9ca3af' },
+                { id: 'cat_exp_meals', name: 'Meals & Entertainment', type: 'expense', color: '#8b5cf6' },
+                { id: 'cat_exp_education', name: 'Education', type: 'expense', color: '#a78bfa' },
+                { id: 'cat_exp_insurance', name: 'Insurance', type: 'expense', color: '#c4b5fd' },
+                { id: 'cat_uncategorized', name: 'Uncategorized', type: 'expense', color: '#94a3b8' }
+            ];
+        }
+
+        // Default vendor to category mappings
+        function getDefaultVendorMappings() {
+            return {
+                // Stripe payouts
+                'stripe': 'cat_income_stripe',
+                'stripe payments': 'cat_income_stripe',
+                // Platform costs
+                'kajabi': 'cat_exp_kajabi',
+                'kajabi llc': 'cat_exp_kajabi',
+                // AI Tools
+                'openai': 'cat_exp_ai',
+                'anthropic': 'cat_exp_ai',
+                'claude': 'cat_exp_ai',
+                'chatgpt': 'cat_exp_ai',
+                'midjourney': 'cat_exp_ai',
+                // Software
+                'zoom': 'cat_exp_software',
+                'zapier': 'cat_exp_software',
+                'canva': 'cat_exp_software',
+                'adobe': 'cat_exp_software',
+                'google': 'cat_exp_software',
+                'microsoft': 'cat_exp_software',
+                'dropbox': 'cat_exp_software',
+                'slack': 'cat_exp_software',
+                'notion': 'cat_exp_software',
+                'calendly': 'cat_exp_software',
+                'typeform': 'cat_exp_software',
+                'mailchimp': 'cat_exp_software',
+                'convertkit': 'cat_exp_software',
+                'activecampaign': 'cat_exp_software',
+                // Marketing
+                'facebook': 'cat_exp_marketing',
+                'meta': 'cat_exp_marketing',
+                'instagram': 'cat_exp_marketing',
+                'linkedin': 'cat_exp_marketing',
+                'google ads': 'cat_exp_marketing',
+                // Travel
+                'american airlines': 'cat_exp_travel',
+                'delta': 'cat_exp_travel',
+                'united': 'cat_exp_travel',
+                'southwest': 'cat_exp_travel',
+                'uber': 'cat_exp_travel',
+                'lyft': 'cat_exp_travel',
+                'marriott': 'cat_exp_travel',
+                'hilton': 'cat_exp_travel',
+                'airbnb': 'cat_exp_travel',
+                // Professional Services
+                'quickbooks': 'cat_exp_professional',
+                'intuit': 'cat_exp_professional',
+                // Bank Fees
+                'chase fee': 'cat_exp_bank_fees',
+                'service charge': 'cat_exp_bank_fees',
+                'wire fee': 'cat_exp_bank_fees',
+                'atm fee': 'cat_exp_bank_fees',
+                // Refunds
+                'refund': 'cat_exp_refunds',
+                'chargeback': 'cat_exp_refunds'
+            };
+        }
 
         // Storage keys
         const STORAGE_KEYS = {
@@ -1727,6 +2176,9 @@
         // ============================================
 
         document.addEventListener('DOMContentLoaded', function() {
+            // ONE-TIME PASSWORD RESET - Remove this line after logging in
+            localStorage.removeItem('mastermind_billing_users');
+
             loadFromLocalStorage();
             initSupabase();
             checkAuth();
@@ -1790,7 +2242,21 @@
             // Load app data
             const storedData = localStorage.getItem(STORAGE_KEYS.DATA);
             if (storedData) {
-                appData = JSON.parse(storedData);
+                const parsed = JSON.parse(storedData);
+                // Merge with defaults to ensure new fields exist
+                appData = {
+                    members: parsed.members || [],
+                    stripeTransactions: parsed.stripeTransactions || [],
+                    discrepancies: parsed.discrepancies || [],
+                    importLogs: parsed.importLogs || [],
+                    settings: parsed.settings || {},
+                    // Bookkeeping data - use stored or defaults
+                    bankTransactions: parsed.bankTransactions || [],
+                    bankStatements: parsed.bankStatements || [],
+                    expenseCategories: parsed.expenseCategories || getDefaultCategories(),
+                    vendorMappings: parsed.vendorMappings || getDefaultVendorMappings(),
+                    stripePayoutMatches: parsed.stripePayoutMatches || []
+                };
             }
         }
 
@@ -2259,6 +2725,8 @@
                 refreshDashboard();
             } else if (tabName === 'members') {
                 refreshMembersTable();
+            } else if (tabName === 'bookkeeping') {
+                refreshBookkeeping();
             }
         }
 
@@ -2268,6 +2736,19 @@
 
         function openModal(modalId) {
             document.getElementById(modalId).classList.add('active');
+
+            // Set defaults for specific modals
+            if (modalId === 'add-transaction-modal') {
+                // Set today's date as default
+                const today = new Date().toISOString().split('T')[0];
+                document.getElementById('txn-date').value = today;
+                populateCategoryDropdowns();
+            } else if (modalId === 'manage-categories-modal') {
+                renderCategoriesList();
+            } else if (modalId === 'vendor-mappings-modal') {
+                populateCategoryDropdowns();
+                renderVendorMappingsList();
+            }
         }
 
         function closeModal(modalId) {
@@ -2985,6 +3466,899 @@
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+        }
+
+        // ============================================
+        // BOOKKEEPING FUNCTIONS
+        // ============================================
+
+        function importChaseCSV() {
+            const fileInput = document.getElementById('chase-file');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                alert('Please select a CSV file.');
+                return;
+            }
+
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    processChaseImport(results.data);
+                    closeModal('import-chase-modal');
+                    fileInput.value = '';
+                },
+                error: function(error) {
+                    alert('Error parsing CSV: ' + error.message);
+                }
+            });
+        }
+
+        function processChaseImport(data) {
+            const accountName = document.getElementById('chase-account-name').value || 'Chase Business';
+            const autoCategorize = document.getElementById('chase-auto-categorize').checked;
+
+            let imported = 0;
+            let skipped = 0;
+
+            // Debug: log first row to see column names
+            if (data.length > 0) {
+                console.log('Chase CSV columns found:', Object.keys(data[0]));
+            }
+
+            data.forEach(row => {
+                // Chase CSV column variations
+                const dateStr = row['Posting Date'] || row['Post Date'] || row['Transaction Date'] || row['Date'];
+                const description = row['Description'] || row['Merchant Name'] || row['Payee'] || '';
+                const amountStr = row['Amount'] || row['Transaction Amount'] || '0';
+                const balanceStr = row['Balance'] || row['Running Balance'] || '';
+                const details = row['Details'] || row['Type'] || '';
+
+                if (!dateStr || !description) {
+                    skipped++;
+                    return;
+                }
+
+                // Parse amount - Chase uses negative for debits
+                let amount = parseFloat(String(amountStr).replace(/[$,]/g, '')) || 0;
+                const isDebit = amount < 0;
+                amount = Math.abs(amount);
+
+                // Parse date (Chase format: MM/DD/YYYY)
+                let transactionDate;
+                try {
+                    const parts = dateStr.split('/');
+                    if (parts.length === 3) {
+                        transactionDate = new Date(parts[2], parts[0] - 1, parts[1]);
+                    } else {
+                        transactionDate = new Date(dateStr);
+                    }
+                } catch (e) {
+                    transactionDate = new Date();
+                }
+
+                // Generate unique ID based on date + description + amount
+                const txnId = `chase_${transactionDate.toISOString().split('T')[0]}_${description.substring(0, 20).replace(/\s+/g, '_')}_${amount}`;
+
+                // Check for duplicate
+                if (appData.bankTransactions.some(t => t.id === txnId)) {
+                    skipped++;
+                    return;
+                }
+
+                // Determine transaction type
+                const type = isDebit ? 'withdrawal' : 'deposit';
+
+                // Auto-categorize if enabled
+                let categoryId = 'cat_uncategorized';
+                if (autoCategorize) {
+                    categoryId = autoCategorizeTransaction(description, type);
+                }
+
+                const transaction = {
+                    id: txnId,
+                    account: accountName,
+                    date: transactionDate.toISOString(),
+                    description: description.trim(),
+                    amount: amount,
+                    type: type,
+                    balance: parseFloat(String(balanceStr).replace(/[$,]/g, '')) || null,
+                    category_id: categoryId,
+                    details: details,
+                    is_matched: false,
+                    matched_stripe_id: null,
+                    created_at: new Date().toISOString()
+                };
+
+                appData.bankTransactions.push(transaction);
+                imported++;
+            });
+
+            // Sort by date descending
+            appData.bankTransactions.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+            // Log import
+            appData.importLogs.push({
+                id: generateId(),
+                import_type: 'chase_bank',
+                file_name: document.getElementById('chase-file').files[0]?.name,
+                records_imported: imported,
+                records_skipped: skipped,
+                imported_by: currentUser?.name || 'System',
+                imported_at: new Date().toISOString()
+            });
+
+            saveToLocalStorage();
+            refreshBookkeeping();
+
+            alert(`Chase import complete!\n\nImported: ${imported}\nSkipped (duplicates): ${skipped}\n\n${autoCategorize ? 'Transactions were auto-categorized.' : ''}`);
+        }
+
+        function autoCategorizeTransaction(description, type) {
+            const desc = description.toLowerCase();
+
+            // Ensure we have vendor mappings
+            if (!appData.vendorMappings || Object.keys(appData.vendorMappings).length === 0) {
+                appData.vendorMappings = getDefaultVendorMappings();
+            }
+
+            // Check vendor mappings
+            for (const [keyword, categoryId] of Object.entries(appData.vendorMappings)) {
+                if (desc.includes(keyword.toLowerCase())) {
+                    return categoryId;
+                }
+            }
+
+            // Default category based on type
+            if (type === 'deposit') {
+                return 'cat_income_other';
+            }
+            return 'cat_uncategorized';
+        }
+
+        function refreshBookkeeping() {
+            // Ensure categories exist
+            if (!appData.expenseCategories || appData.expenseCategories.length === 0) {
+                appData.expenseCategories = getDefaultCategories();
+            }
+
+            // Populate category filter dropdown
+            populateCategoryDropdowns();
+
+            // Get selected period
+            const period = document.getElementById('pl-period-select')?.value || 'this_month';
+            const dateRange = getDateRangeForPeriod(period);
+
+            // Filter transactions by period
+            const filteredTxns = appData.bankTransactions.filter(t => {
+                const txnDate = new Date(t.date);
+                return txnDate >= dateRange.start && txnDate <= dateRange.end;
+            });
+
+            // Calculate P&L
+            const plData = calculatePL(filteredTxns);
+
+            // Update P&L stats
+            updatePLStats(plData, dateRange);
+
+            // Render transactions table
+            renderBankTransactions(filteredTxns);
+
+            // Render category breakdowns
+            renderCategoryBreakdowns(plData);
+
+            // Update Stripe matching stats
+            updateStripeMatchStats();
+        }
+
+        function getDateRangeForPeriod(period) {
+            const now = new Date();
+            let start, end;
+
+            switch (period) {
+                case 'this_month':
+                    start = new Date(now.getFullYear(), now.getMonth(), 1);
+                    end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+                    break;
+                case 'last_month':
+                    start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                    end = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+                    break;
+                case 'this_quarter':
+                    const quarter = Math.floor(now.getMonth() / 3);
+                    start = new Date(now.getFullYear(), quarter * 3, 1);
+                    end = new Date(now.getFullYear(), (quarter + 1) * 3, 0, 23, 59, 59);
+                    break;
+                case 'this_year':
+                    start = new Date(now.getFullYear(), 0, 1);
+                    end = new Date(now.getFullYear(), 11, 31, 23, 59, 59);
+                    break;
+                case 'all_time':
+                default:
+                    start = new Date(2000, 0, 1);
+                    end = new Date(2099, 11, 31);
+                    break;
+            }
+
+            return { start, end };
+        }
+
+        function calculatePL(transactions) {
+            const income = { total: 0, byCategory: {} };
+            const expenses = { total: 0, byCategory: {} };
+
+            transactions.forEach(txn => {
+                const category = appData.expenseCategories.find(c => c.id === txn.category_id) ||
+                                 { id: 'cat_uncategorized', name: 'Uncategorized', type: 'expense' };
+
+                if (txn.type === 'deposit' || category.type === 'income') {
+                    income.total += txn.amount;
+                    income.byCategory[category.id] = (income.byCategory[category.id] || 0) + txn.amount;
+                } else {
+                    expenses.total += txn.amount;
+                    expenses.byCategory[category.id] = (expenses.byCategory[category.id] || 0) + txn.amount;
+                }
+            });
+
+            return {
+                income,
+                expenses,
+                netProfit: income.total - expenses.total,
+                margin: income.total > 0 ? ((income.total - expenses.total) / income.total * 100).toFixed(1) : 0
+            };
+        }
+
+        function updatePLStats(plData, dateRange) {
+            // Update period label
+            const periodSelect = document.getElementById('pl-period-select');
+            const periodLabel = periodSelect?.options[periodSelect.selectedIndex]?.text || 'This Month';
+            const periodEl = document.getElementById('pl-period');
+            if (periodEl) periodEl.textContent = periodLabel;
+
+            // Update stat values
+            const incomeEl = document.getElementById('stat-total-income');
+            if (incomeEl) {
+                incomeEl.textContent = '$' + formatCurrency(plData.income.total);
+                incomeEl.className = 'stat-value positive';
+            }
+
+            const expenseEl = document.getElementById('stat-total-expenses');
+            if (expenseEl) {
+                expenseEl.textContent = '$' + formatCurrency(plData.expenses.total);
+                expenseEl.className = 'stat-value negative';
+            }
+
+            const netEl = document.getElementById('stat-net-pl');
+            if (netEl) {
+                netEl.textContent = (plData.netProfit >= 0 ? '+$' : '-$') + formatCurrency(Math.abs(plData.netProfit));
+                netEl.className = 'stat-value ' + (plData.netProfit >= 0 ? 'positive' : 'negative');
+            }
+
+            const marginEl = document.getElementById('pl-margin');
+            if (marginEl) {
+                marginEl.textContent = plData.margin + '% margin';
+            }
+
+            // Update transaction counts
+            const incomeTxns = appData.bankTransactions.filter(t => t.type === 'deposit').length;
+            const expenseTxns = appData.bankTransactions.filter(t => t.type === 'withdrawal').length;
+
+            const incomeCountEl = document.getElementById('income-txn-count');
+            if (incomeCountEl) incomeCountEl.textContent = incomeTxns + ' deposits';
+
+            const expenseCountEl = document.getElementById('expense-txn-count');
+            if (expenseCountEl) expenseCountEl.textContent = expenseTxns + ' transactions';
+        }
+
+        function renderBankTransactions(transactions) {
+            const tbody = document.getElementById('bank-transactions-table');
+            if (!tbody) return;
+
+            // Apply filters
+            const search = (document.getElementById('txn-search')?.value || '').toLowerCase();
+            const typeFilter = document.getElementById('txn-type-filter')?.value || '';
+            const categoryFilter = document.getElementById('txn-category-filter')?.value || '';
+
+            let filtered = transactions;
+
+            if (search) {
+                filtered = filtered.filter(t =>
+                    t.description.toLowerCase().includes(search)
+                );
+            }
+
+            if (typeFilter) {
+                filtered = filtered.filter(t => t.type === typeFilter);
+            }
+
+            if (categoryFilter) {
+                filtered = filtered.filter(t => t.category_id === categoryFilter);
+            }
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="text-center text-muted" style="padding: 3rem;">
+                            ${appData.bankTransactions.length === 0
+                                ? 'No bank transactions yet. Import a Chase CSV to get started.'
+                                : 'No transactions match your filters.'}
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = filtered.slice(0, 100).map(txn => {
+                const category = appData.expenseCategories.find(c => c.id === txn.category_id) ||
+                                 { name: 'Uncategorized', color: '#94a3b8' };
+
+                return `
+                    <tr>
+                        <td>${formatDate(txn.date)}</td>
+                        <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${txn.description}">${txn.description}</td>
+                        <td>
+                            <span class="badge" style="background: ${category.color}20; color: ${category.color}; border: 1px solid ${category.color}40;">
+                                ${category.name}
+                            </span>
+                        </td>
+                        <td class="${txn.type === 'deposit' ? 'positive' : 'negative'}">
+                            ${txn.type === 'deposit' ? '+' : '-'}$${formatCurrency(txn.amount)}
+                        </td>
+                        <td>${txn.balance ? '$' + formatCurrency(txn.balance) : '-'}</td>
+                        <td>
+                            ${txn.is_matched
+                                ? '<span class="badge badge-success">Matched</span>'
+                                : txn.type === 'deposit' && txn.category_id === 'cat_income_stripe'
+                                    ? '<span class="badge badge-warning">Pending</span>'
+                                    : '-'}
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-outline" onclick="openEditCategoryModal('${txn.id}')">Edit</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function filterBankTransactions() {
+            const period = document.getElementById('pl-period-select')?.value || 'this_month';
+            const dateRange = getDateRangeForPeriod(period);
+            const filteredTxns = appData.bankTransactions.filter(t => {
+                const txnDate = new Date(t.date);
+                return txnDate >= dateRange.start && txnDate <= dateRange.end;
+            });
+            renderBankTransactions(filteredTxns);
+        }
+
+        function renderCategoryBreakdowns(plData) {
+            // Income breakdown
+            const incomeContainer = document.getElementById('income-breakdown');
+            if (incomeContainer) {
+                if (Object.keys(plData.income.byCategory).length === 0) {
+                    incomeContainer.innerHTML = '<div class="empty-state"><div class="empty-state-message">No income data yet</div></div>';
+                } else {
+                    incomeContainer.innerHTML = Object.entries(plData.income.byCategory)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([catId, amount]) => {
+                            const category = appData.expenseCategories.find(c => c.id === catId) || { name: catId, color: '#10b981' };
+                            const percent = (amount / plData.income.total * 100).toFixed(1);
+                            return `
+                                <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--gray-100);">
+                                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                        <span style="width: 12px; height: 12px; border-radius: 3px; background: ${category.color};"></span>
+                                        <span>${category.name}</span>
+                                    </div>
+                                    <div style="text-align: right;">
+                                        <div style="font-weight: 600; color: var(--success);">$${formatCurrency(amount)}</div>
+                                        <div style="font-size: 0.75rem; color: var(--gray-500);">${percent}%</div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('');
+                }
+            }
+
+            // Expense breakdown
+            const expenseContainer = document.getElementById('expense-breakdown');
+            if (expenseContainer) {
+                if (Object.keys(plData.expenses.byCategory).length === 0) {
+                    expenseContainer.innerHTML = '<div class="empty-state"><div class="empty-state-message">No expense data yet</div></div>';
+                } else {
+                    expenseContainer.innerHTML = Object.entries(plData.expenses.byCategory)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([catId, amount]) => {
+                            const category = appData.expenseCategories.find(c => c.id === catId) || { name: catId, color: '#dc2626' };
+                            const percent = (amount / plData.expenses.total * 100).toFixed(1);
+                            return `
+                                <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--gray-100);">
+                                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                        <span style="width: 12px; height: 12px; border-radius: 3px; background: ${category.color};"></span>
+                                        <span>${category.name}</span>
+                                    </div>
+                                    <div style="text-align: right;">
+                                        <div style="font-weight: 600; color: var(--danger);">$${formatCurrency(amount)}</div>
+                                        <div style="font-size: 0.75rem; color: var(--gray-500);">${percent}%</div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('');
+                }
+            }
+        }
+
+        function populateCategoryDropdowns() {
+            const categories = appData.expenseCategories || getDefaultCategories();
+            const incomeCategories = categories.filter(c => c.type === 'income');
+            const expenseCategories = categories.filter(c => c.type === 'expense');
+
+            // Transaction filter dropdown
+            const filterSelect = document.getElementById('txn-category-filter');
+            if (filterSelect) {
+                filterSelect.innerHTML = '<option value="">All Categories</option>' +
+                    '<optgroup label="Income">' +
+                    incomeCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('') +
+                    '</optgroup>' +
+                    '<optgroup label="Expenses">' +
+                    expenseCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('') +
+                    '</optgroup>';
+            }
+
+            // Add transaction modal category dropdown
+            const newTxnSelect = document.getElementById('txn-new-category');
+            if (newTxnSelect) {
+                newTxnSelect.innerHTML = '<option value="">Select category...</option>' +
+                    '<optgroup label="Income">' +
+                    incomeCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('') +
+                    '</optgroup>' +
+                    '<optgroup label="Expenses">' +
+                    expenseCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('') +
+                    '</optgroup>';
+            }
+
+            // Edit category modal dropdown
+            const editCatSelect = document.getElementById('edit-cat-select');
+            if (editCatSelect) {
+                editCatSelect.innerHTML = '<option value="">Select category...</option>' +
+                    '<optgroup label="Income">' +
+                    incomeCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('') +
+                    '</optgroup>' +
+                    '<optgroup label="Expenses">' +
+                    expenseCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('') +
+                    '</optgroup>';
+            }
+
+            // Vendor mapping category dropdown
+            const vendorCatSelect = document.getElementById('new-vendor-category');
+            if (vendorCatSelect) {
+                vendorCatSelect.innerHTML = '<option value="">Select category...</option>' +
+                    '<optgroup label="Income">' +
+                    incomeCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('') +
+                    '</optgroup>' +
+                    '<optgroup label="Expenses">' +
+                    expenseCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('') +
+                    '</optgroup>';
+            }
+        }
+
+        function openEditCategoryModal(txnId) {
+            const txn = appData.bankTransactions.find(t => t.id === txnId);
+            if (!txn) return;
+
+            document.getElementById('edit-cat-txn-id').value = txnId;
+            document.getElementById('edit-cat-txn-desc').textContent = txn.description.substring(0, 50) + (txn.description.length > 50 ? '...' : '');
+            document.getElementById('edit-cat-select').value = txn.category_id || '';
+            document.getElementById('edit-cat-remember').checked = false;
+
+            populateCategoryDropdowns();
+            openModal('edit-category-modal');
+        }
+
+        function saveTransactionCategory() {
+            const txnId = document.getElementById('edit-cat-txn-id').value;
+            const categoryId = document.getElementById('edit-cat-select').value;
+            const remember = document.getElementById('edit-cat-remember').checked;
+
+            const txn = appData.bankTransactions.find(t => t.id === txnId);
+            if (!txn) return;
+
+            txn.category_id = categoryId;
+
+            // If "remember" is checked, add to vendor mappings
+            if (remember && categoryId) {
+                // Extract vendor keyword from description
+                const keyword = txn.description.split(' ')[0].toLowerCase();
+                if (keyword.length > 2) {
+                    appData.vendorMappings[keyword] = categoryId;
+                }
+            }
+
+            saveToLocalStorage();
+            closeModal('edit-category-modal');
+            refreshBookkeeping();
+        }
+
+        function addManualTransaction() {
+            const date = document.getElementById('txn-date').value;
+            const description = document.getElementById('txn-description').value;
+            const amount = parseFloat(document.getElementById('txn-amount').value);
+            const type = document.getElementById('txn-type').value;
+            const categoryId = document.getElementById('txn-new-category').value;
+            const notes = document.getElementById('txn-notes').value;
+
+            if (!date || !description || !amount) {
+                alert('Please fill in date, description, and amount.');
+                return;
+            }
+
+            const transaction = {
+                id: 'manual_' + generateId(),
+                account: 'Manual Entry',
+                date: new Date(date).toISOString(),
+                description: description,
+                amount: amount,
+                type: type,
+                balance: null,
+                category_id: categoryId || 'cat_uncategorized',
+                details: 'Manual entry' + (notes ? ': ' + notes : ''),
+                is_matched: false,
+                matched_stripe_id: null,
+                created_at: new Date().toISOString()
+            };
+
+            appData.bankTransactions.push(transaction);
+            appData.bankTransactions.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+            saveToLocalStorage();
+            closeModal('add-transaction-modal');
+
+            // Reset form
+            document.getElementById('txn-date').value = '';
+            document.getElementById('txn-description').value = '';
+            document.getElementById('txn-amount').value = '';
+            document.getElementById('txn-notes').value = '';
+
+            refreshBookkeeping();
+            alert('Transaction added successfully!');
+        }
+
+        // ============================================
+        // STRIPE PAYOUT MATCHING
+        // ============================================
+
+        function matchStripePayouts() {
+            // Get all Stripe transactions that are payouts/transfers
+            const stripePayouts = appData.stripeTransactions.filter(t =>
+                t.status === 'succeeded' && t.net_amount > 0
+            );
+
+            // Get all bank deposits that might be Stripe payouts
+            const bankDeposits = appData.bankTransactions.filter(t =>
+                t.type === 'deposit' &&
+                (t.category_id === 'cat_income_stripe' ||
+                 t.description.toLowerCase().includes('stripe') ||
+                 !t.is_matched)
+            );
+
+            let matched = 0;
+            let unmatched = 0;
+            const matches = [];
+
+            // For each bank deposit, try to find matching Stripe payout
+            bankDeposits.forEach(deposit => {
+                const depositDate = new Date(deposit.date);
+                const depositAmount = deposit.amount;
+
+                // Look for Stripe transactions within 5 days of the deposit
+                // with matching or close amount (Stripe payouts can aggregate)
+                const potentialMatches = stripePayouts.filter(payout => {
+                    const payoutDate = new Date(payout.transaction_date);
+                    const daysDiff = (depositDate - payoutDate) / (1000 * 60 * 60 * 24);
+
+                    // Payout should be 1-5 days before deposit
+                    return daysDiff >= 0 && daysDiff <= 5;
+                });
+
+                // Try to find exact amount match first
+                let match = potentialMatches.find(p => Math.abs(p.net_amount - depositAmount) < 0.01);
+
+                // If no exact match, look for close matches (within $1)
+                if (!match) {
+                    match = potentialMatches.find(p => Math.abs(p.net_amount - depositAmount) < 1);
+                }
+
+                if (match) {
+                    deposit.is_matched = true;
+                    deposit.matched_stripe_id = match.stripe_id;
+                    deposit.category_id = 'cat_income_stripe';
+                    matched++;
+
+                    matches.push({
+                        stripe_date: match.transaction_date,
+                        stripe_amount: match.net_amount,
+                        chase_date: deposit.date,
+                        chase_amount: deposit.amount,
+                        difference: Math.abs(match.net_amount - deposit.amount),
+                        status: 'matched'
+                    });
+                } else if (deposit.description.toLowerCase().includes('stripe')) {
+                    unmatched++;
+                    matches.push({
+                        stripe_date: null,
+                        stripe_amount: null,
+                        chase_date: deposit.date,
+                        chase_amount: deposit.amount,
+                        difference: null,
+                        status: 'unmatched'
+                    });
+                }
+            });
+
+            // Store matches
+            appData.stripePayoutMatches = matches;
+            saveToLocalStorage();
+
+            // Render match table
+            renderPayoutMatchTable(matches);
+            updateStripeMatchStats();
+
+            alert(`Stripe Payout Matching Complete!\n\nMatched: ${matched}\nUnmatched: ${unmatched}`);
+        }
+
+        function renderPayoutMatchTable(matches) {
+            const tbody = document.getElementById('payout-match-table');
+            if (!tbody) return;
+
+            if (matches.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center text-muted" style="padding: 2rem;">
+                            No matches found. Import both Stripe and Chase data, then click "Match Stripe Payouts".
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = matches.map(m => `
+                <tr>
+                    <td>${m.stripe_date ? formatDate(m.stripe_date) : '-'}</td>
+                    <td>${m.stripe_amount ? '$' + formatCurrency(m.stripe_amount) : '-'}</td>
+                    <td>${formatDate(m.chase_date)}</td>
+                    <td>$${formatCurrency(m.chase_amount)}</td>
+                    <td>${m.difference !== null ? '$' + m.difference.toFixed(2) : '-'}</td>
+                    <td>
+                        <span class="badge ${m.status === 'matched' ? 'badge-success' : 'badge-warning'}">
+                            ${m.status === 'matched' ? 'Matched' : 'Unmatched'}
+                        </span>
+                    </td>
+                </tr>
+            `).join('');
+
+            // Update match status badge
+            const matchStatus = document.getElementById('match-status');
+            if (matchStatus) {
+                const matchedCount = matches.filter(m => m.status === 'matched').length;
+                matchStatus.textContent = `${matchedCount}/${matches.length} Matched`;
+                matchStatus.className = matchedCount === matches.length ? 'badge badge-success' : 'badge badge-warning';
+            }
+        }
+
+        function updateStripeMatchStats() {
+            const matches = appData.stripePayoutMatches || [];
+            const matchedCount = matches.filter(m => m.status === 'matched').length;
+            const totalCount = matches.length;
+
+            const statEl = document.getElementById('stat-stripe-matches');
+            if (statEl) {
+                statEl.textContent = `${matchedCount}/${totalCount}`;
+            }
+
+            const unmatchedEl = document.getElementById('unmatched-payouts');
+            if (unmatchedEl) {
+                const unmatched = totalCount - matchedCount;
+                unmatchedEl.textContent = `${unmatched} unmatched payout${unmatched !== 1 ? 's' : ''}`;
+            }
+        }
+
+        // ============================================
+        // CATEGORY MANAGEMENT
+        // ============================================
+
+        function openManageCategoriesModal() {
+            renderCategoriesList();
+            openModal('manage-categories-modal');
+        }
+
+        function renderCategoriesList() {
+            const container = document.getElementById('categories-list');
+            if (!container) return;
+
+            const categories = appData.expenseCategories || getDefaultCategories();
+            const incomeCategories = categories.filter(c => c.type === 'income');
+            const expenseCategories = categories.filter(c => c.type === 'expense');
+
+            container.innerHTML = `
+                <h4 style="font-size: 0.875rem; margin-bottom: 0.5rem; color: var(--success);">Income Categories</h4>
+                ${incomeCategories.map(c => `
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem; background: var(--gray-50); border-radius: var(--radius-sm); margin-bottom: 0.25rem;">
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <span style="width: 16px; height: 16px; border-radius: 3px; background: ${c.color};"></span>
+                            <span>${c.name}</span>
+                        </div>
+                        ${c.id.startsWith('cat_') ? '' : `<button class="btn btn-sm btn-danger" onclick="deleteCategory('${c.id}')" style="padding: 0.25rem 0.5rem;">&times;</button>`}
+                    </div>
+                `).join('')}
+
+                <h4 style="font-size: 0.875rem; margin: 1rem 0 0.5rem; color: var(--danger);">Expense Categories</h4>
+                ${expenseCategories.map(c => `
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem; background: var(--gray-50); border-radius: var(--radius-sm); margin-bottom: 0.25rem;">
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <span style="width: 16px; height: 16px; border-radius: 3px; background: ${c.color};"></span>
+                            <span>${c.name}</span>
+                        </div>
+                        ${c.id.startsWith('cat_') ? '' : `<button class="btn btn-sm btn-danger" onclick="deleteCategory('${c.id}')" style="padding: 0.25rem 0.5rem;">&times;</button>`}
+                    </div>
+                `).join('')}
+            `;
+        }
+
+        function addCategory() {
+            const name = document.getElementById('new-cat-name').value.trim();
+            const type = document.getElementById('new-cat-type').value;
+            const color = document.getElementById('new-cat-color').value;
+
+            if (!name) {
+                alert('Please enter a category name.');
+                return;
+            }
+
+            const newCategory = {
+                id: 'custom_' + generateId(),
+                name: name,
+                type: type,
+                color: color
+            };
+
+            appData.expenseCategories.push(newCategory);
+            saveToLocalStorage();
+
+            document.getElementById('new-cat-name').value = '';
+            renderCategoriesList();
+            populateCategoryDropdowns();
+        }
+
+        function deleteCategory(catId) {
+            if (confirm('Delete this category? Transactions with this category will be set to Uncategorized.')) {
+                appData.expenseCategories = appData.expenseCategories.filter(c => c.id !== catId);
+
+                // Update transactions with deleted category
+                appData.bankTransactions.forEach(t => {
+                    if (t.category_id === catId) {
+                        t.category_id = 'cat_uncategorized';
+                    }
+                });
+
+                saveToLocalStorage();
+                renderCategoriesList();
+                populateCategoryDropdowns();
+                refreshBookkeeping();
+            }
+        }
+
+        // ============================================
+        // VENDOR MAPPINGS
+        // ============================================
+
+        function openVendorMappingsModal() {
+            renderVendorMappingsList();
+            openModal('vendor-mappings-modal');
+        }
+
+        function renderVendorMappingsList() {
+            const container = document.getElementById('vendor-mappings-list');
+            if (!container) return;
+
+            const mappings = appData.vendorMappings || {};
+            const sortedKeys = Object.keys(mappings).sort();
+
+            if (sortedKeys.length === 0) {
+                container.innerHTML = '<p class="text-muted">No vendor mappings configured.</p>';
+                return;
+            }
+
+            container.innerHTML = sortedKeys.map(keyword => {
+                const catId = mappings[keyword];
+                const category = appData.expenseCategories.find(c => c.id === catId) || { name: catId, color: '#94a3b8' };
+
+                return `
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem; background: var(--gray-50); border-radius: var(--radius-sm); margin-bottom: 0.25rem;">
+                        <div>
+                            <strong style="font-family: monospace;">${keyword}</strong>
+                            <span style="color: var(--gray-400); margin: 0 0.5rem;">→</span>
+                            <span class="badge" style="background: ${category.color}20; color: ${category.color};">${category.name}</span>
+                        </div>
+                        <button class="btn btn-sm btn-outline" onclick="deleteVendorMapping('${keyword}')" style="padding: 0.25rem 0.5rem;">&times;</button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function addVendorMapping() {
+            const keyword = document.getElementById('new-vendor-keyword').value.trim().toLowerCase();
+            const categoryId = document.getElementById('new-vendor-category').value;
+
+            if (!keyword || !categoryId) {
+                alert('Please enter both a keyword and select a category.');
+                return;
+            }
+
+            appData.vendorMappings[keyword] = categoryId;
+            saveToLocalStorage();
+
+            document.getElementById('new-vendor-keyword').value = '';
+            document.getElementById('new-vendor-category').value = '';
+            renderVendorMappingsList();
+        }
+
+        function deleteVendorMapping(keyword) {
+            delete appData.vendorMappings[keyword];
+            saveToLocalStorage();
+            renderVendorMappingsList();
+        }
+
+        function resetVendorMappings() {
+            if (confirm('Reset all vendor mappings to defaults? Custom mappings will be lost.')) {
+                appData.vendorMappings = getDefaultVendorMappings();
+                saveToLocalStorage();
+                renderVendorMappingsList();
+            }
+        }
+
+        // ============================================
+        // P&L REPORT EXPORT
+        // ============================================
+
+        function exportPLReport() {
+            const period = document.getElementById('pl-period-select')?.value || 'this_month';
+            const dateRange = getDateRangeForPeriod(period);
+
+            const filteredTxns = appData.bankTransactions.filter(t => {
+                const txnDate = new Date(t.date);
+                return txnDate >= dateRange.start && txnDate <= dateRange.end;
+            });
+
+            const plData = calculatePL(filteredTxns);
+
+            // Build report
+            let report = `PROFIT & LOSS REPORT\n`;
+            report += `Period: ${document.getElementById('pl-period-select')?.options[document.getElementById('pl-period-select')?.selectedIndex]?.text}\n`;
+            report += `Generated: ${new Date().toLocaleDateString()}\n`;
+            report += `${'='.repeat(50)}\n\n`;
+
+            report += `INCOME\n`;
+            report += `${'-'.repeat(30)}\n`;
+            Object.entries(plData.income.byCategory).forEach(([catId, amount]) => {
+                const category = appData.expenseCategories.find(c => c.id === catId) || { name: catId };
+                report += `${category.name.padEnd(25)} $${formatCurrency(amount)}\n`;
+            });
+            report += `${'='.repeat(30)}\n`;
+            report += `Total Income:             $${formatCurrency(plData.income.total)}\n\n`;
+
+            report += `EXPENSES\n`;
+            report += `${'-'.repeat(30)}\n`;
+            Object.entries(plData.expenses.byCategory).forEach(([catId, amount]) => {
+                const category = appData.expenseCategories.find(c => c.id === catId) || { name: catId };
+                report += `${category.name.padEnd(25)} $${formatCurrency(amount)}\n`;
+            });
+            report += `${'='.repeat(30)}\n`;
+            report += `Total Expenses:           $${formatCurrency(plData.expenses.total)}\n\n`;
+
+            report += `${'='.repeat(50)}\n`;
+            report += `NET PROFIT/LOSS:          ${plData.netProfit >= 0 ? '+' : ''}$${formatCurrency(plData.netProfit)}\n`;
+            report += `Profit Margin:            ${plData.margin}%\n`;
+
+            downloadFile(report, `pl-report-${period}.txt`, 'text/plain');
         }
 
         // ============================================
