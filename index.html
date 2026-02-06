@@ -3316,33 +3316,68 @@
             let imported = 0;
             let skipped = 0;
 
+            // Log first row columns for debugging
+            if (data.length > 0) {
+                console.log('Stripe CSV columns found:', Object.keys(data[0]));
+            }
+
             data.forEach(row => {
-                // Try common Stripe column names
+                // Try common Stripe column names (unified_payments.csv format)
                 const stripeId = row['id'] || row['ID'] || row['Payment ID'];
                 const amount = parseFloat(row['Amount'] || row['amount'] || 0);
 
-                if (!stripeId || !amount) {
+                // Skip rows without amount (but allow rows without stripeId for canceled payments)
+                if (!amount) {
                     skipped++;
                     return;
                 }
+
+                // Generate ID for rows without one (canceled payments)
+                const finalStripeId = stripeId || `canceled_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
                 // Check for duplicate
-                if (appData.stripeTransactions.some(t => t.stripe_id === stripeId)) {
+                if (stripeId && appData.stripeTransactions.some(t => t.stripe_id === stripeId)) {
                     skipped++;
                     return;
                 }
 
+                // Get customer email - try multiple column names
+                const customerEmail = (
+                    row['Customer Email'] ||
+                    row['customer_email'] ||
+                    row['Email'] ||
+                    row['email'] ||
+                    ''
+                ).toLowerCase().trim();
+
+                // Get customer name - try multiple column names
+                const customerName =
+                    row['Customer Description'] ||
+                    row['Customer Name'] ||
+                    row['customer_name'] ||
+                    row['Name'] ||
+                    '';
+
+                // Get date - unified_payments uses "Created date (UTC)"
+                const transactionDate =
+                    row['Created date (UTC)'] ||
+                    row['Created (UTC)'] ||
+                    row['created'] ||
+                    row['Date'] ||
+                    new Date().toISOString();
+
+                // Amount is already in dollars (not cents) in unified_payments.csv
                 const transaction = {
                     id: generateId(),
-                    stripe_id: stripeId,
+                    stripe_id: finalStripeId,
                     stripe_account: account,
-                    member_email: (row['Customer Email'] || row['customer_email'] || row['Email'] || '').toLowerCase().trim(),
-                    customer_name: row['Customer Name'] || row['customer_name'] || row['Name'],
-                    amount: amount / 100, // Stripe amounts are in cents
-                    fee: parseFloat(row['Fee'] || row['fee'] || 0) / 100,
+                    member_email: customerEmail,
+                    customer_name: customerName,
+                    amount: amount, // Already in dollars
+                    fee: parseFloat(row['Fee'] || row['fee'] || 0), // Already in dollars
                     status: mapStripeStatus(row['Status'] || row['status']),
-                    transaction_date: row['Created (UTC)'] || row['created'] || row['Date'] || new Date().toISOString(),
-                    description: row['Description'] || row['description']
+                    transaction_date: transactionDate,
+                    description: row['Description'] || row['description'] || ''
                 };
 
                 transaction.net_amount = transaction.amount - transaction.fee;
@@ -3388,10 +3423,12 @@
 
         function mapStripeStatus(status) {
             if (!status) return 'succeeded';
-            const s = status.toLowerCase();
-            if (s.includes('succeed') || s.includes('paid')) return 'succeeded';
-            if (s.includes('fail')) return 'failed';
+            const s = status.toLowerCase().trim();
+            if (s === 'paid' || s.includes('succeed') || s.includes('complete')) return 'succeeded';
+            if (s === 'failed' || s.includes('fail')) return 'failed';
+            if (s === 'canceled' || s.includes('cancel')) return 'canceled';
             if (s.includes('pending')) return 'pending';
+            if (s.includes('refund')) return 'refunded';
             if (s.includes('refund')) return 'refunded';
             if (s.includes('dispute')) return 'disputed';
             return 'succeeded';
