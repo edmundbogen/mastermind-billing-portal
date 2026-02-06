@@ -2323,8 +2323,8 @@
                         const txnData = {
                             stripe_id: txn.id || txn.stripeId || `local_${Date.now()}_${Math.random()}`,
                             stripe_account: txn.account || txn.stripeAccount || 'reignation',
-                            member_email: txn.email || txn.customerEmail || null,
-                            customer_name: txn.name || txn.customerName || null,
+                            member_email: txn.member_email || txn.email || txn.customerEmail || null,
+                            customer_name: txn.customer_name || txn.name || txn.customerName || null,
                             amount: parseFloat(txn.amount) || 0,
                             fee: parseFloat(txn.fee) || 0,
                             net_amount: parseFloat(txn.netAmount) || parseFloat(txn.amount) - parseFloat(txn.fee) || 0,
