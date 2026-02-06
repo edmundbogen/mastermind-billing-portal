@@ -2044,18 +2044,18 @@
         let supabaseClient = null;
         let syncStatus = 'offline';
 
-        // User credentials - PASSWORD IS: 1
+        // User credentials
         let users = {
             edmund: {
                 name: 'Edmund Bogen',
                 role: 'admin',
-                password: '1',
+                password: 'StanleyBogen1!',
                 initials: 'EB'
             },
             eytan: {
                 name: 'Eytan',
                 role: 'full_admin',
-                password: '1',
+                password: 'Eytanisgay1!',
                 initials: 'EY'
             }
         };
@@ -2176,17 +2176,7 @@
         // ============================================
 
         document.addEventListener('DOMContentLoaded', function() {
-            // FORCE FRESH LOGIN - clear all stored auth
-            localStorage.removeItem('mastermind_billing_users');
-            localStorage.removeItem('mastermind_billing_session');
-
             loadFromLocalStorage();
-
-            // ONE-TIME: Clear bank transactions only (keeps members/contacts) - v2
-            appData.bankTransactions = [];
-            appData.stripePayoutMatches = [];
-            saveToLocalStorage();
-
             initSupabase();
             checkAuth();
             setupEventListeners();
@@ -2240,9 +2230,6 @@
         }
 
         function loadFromLocalStorage() {
-            // ALWAYS use hardcoded passwords - ignore stored users
-            // Password is: changeme
-
             // Load app data
             const storedData = localStorage.getItem(STORAGE_KEYS.DATA);
             if (storedData) {
@@ -2404,6 +2391,63 @@
                     }
                 }
 
+                // Sync bank statements
+                if (appData.bankStatements && appData.bankStatements.length > 0) {
+                    for (const stmt of appData.bankStatements) {
+                        const stmtData = {
+                            id: stmt.id || undefined,
+                            account_name: stmt.accountName || stmt.account_name || 'Unknown Account',
+                            account_type: stmt.accountType || stmt.account_type || 'checking',
+                            statement_month: stmt.statementMonth || stmt.statement_month || new Date().toISOString().slice(0, 10),
+                            start_balance: parseFloat(stmt.startBalance || stmt.start_balance) || 0,
+                            end_balance: parseFloat(stmt.endBalance || stmt.end_balance) || 0,
+                            total_deposits: parseFloat(stmt.totalDeposits || stmt.total_deposits) || 0,
+                            total_withdrawals: parseFloat(stmt.totalWithdrawals || stmt.total_withdrawals) || 0,
+                            file_name: stmt.fileName || stmt.file_name || null,
+                            import_method: stmt.importMethod || stmt.import_method || 'csv',
+                            imported_by: stmt.importedBy || stmt.imported_by || currentUser?.name || null,
+                            imported_at: stmt.importedAt || stmt.imported_at || new Date().toISOString()
+                        };
+
+                        const { error } = await supabaseClient
+                            .from('bank_statements')
+                            .upsert(stmtData, { onConflict: 'id' });
+
+                        if (error && !error.message.includes('duplicate')) {
+                            console.warn('Bank statement sync error:', error);
+                        }
+                    }
+                }
+
+                // Sync bank transactions
+                if (appData.bankTransactions && appData.bankTransactions.length > 0) {
+                    for (const txn of appData.bankTransactions) {
+                        const txnData = {
+                            id: txn.id || undefined,
+                            statement_id: txn.statementId || txn.statement_id || null,
+                            transaction_date: txn.date || txn.transaction_date || new Date().toISOString().slice(0, 10),
+                            post_date: txn.postDate || txn.post_date || null,
+                            description: txn.description || 'No description',
+                            original_description: txn.originalDescription || txn.original_description || null,
+                            amount: parseFloat(txn.amount) || 0,
+                            transaction_type: txn.type || txn.transaction_type || 'expense',
+                            category_id: txn.categoryId || txn.category_id || null,
+                            is_reconciled: txn.isReconciled || txn.is_reconciled || false,
+                            reconciled_with_stripe: txn.reconciledWithStripe || txn.reconciled_with_stripe || null,
+                            is_tax_deductible: txn.isTaxDeductible || txn.is_tax_deductible || false,
+                            notes: txn.notes || null
+                        };
+
+                        const { error } = await supabaseClient
+                            .from('bank_transactions')
+                            .upsert(txnData, { onConflict: 'id' });
+
+                        if (error && !error.message.includes('duplicate')) {
+                            console.warn('Bank transaction sync error:', error);
+                        }
+                    }
+                }
+
                 lastSyncTime = new Date();
                 syncStatus = 'online';
                 updateSyncStatus();
@@ -2430,20 +2474,19 @@
                     .from('billing_users')
                     .select('*');
 
-                // DISABLED - Always use hardcoded password (which is: 1)
-                // if (usersError) {
-                //     console.warn('Failed to fetch users:', usersError);
-                // } else if (cloudUsers && cloudUsers.length > 0) {
-                //     cloudUsers.forEach(u => {
-                //         users[u.username] = {
-                //             name: u.name,
-                //             role: u.role,
-                //             password: u.password_hash,
-                //             initials: u.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
-                //         };
-                //     });
-                //     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
-                // }
+                if (usersError) {
+                    console.warn('Failed to fetch users:', usersError);
+                } else if (cloudUsers && cloudUsers.length > 0) {
+                    cloudUsers.forEach(u => {
+                        users[u.username] = {
+                            name: u.name,
+                            role: u.role,
+                            password: u.password_hash,
+                            initials: u.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
+                        };
+                    });
+                    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+                }
 
                 // Fetch members from Supabase
                 const { data: members, error: membersError } = await supabaseClient
@@ -2552,6 +2595,78 @@
                         notes: d.resolution_notes,
                         resolutionNotes: d.resolution_notes,
                         createdAt: d.created_at
+                    }));
+                }
+
+                // Fetch bank statements from Supabase
+                const { data: bankStatements, error: stmtError } = await supabaseClient
+                    .from('bank_statements')
+                    .select('*')
+                    .order('statement_month', { ascending: false });
+
+                if (stmtError) {
+                    console.warn('Failed to fetch bank statements:', stmtError);
+                } else if (bankStatements && bankStatements.length > 0) {
+                    appData.bankStatements = bankStatements.map(s => ({
+                        id: s.id,
+                        accountName: s.account_name,
+                        account_name: s.account_name,
+                        accountType: s.account_type,
+                        account_type: s.account_type,
+                        statementMonth: s.statement_month,
+                        statement_month: s.statement_month,
+                        startBalance: s.start_balance,
+                        start_balance: s.start_balance,
+                        endBalance: s.end_balance,
+                        end_balance: s.end_balance,
+                        totalDeposits: s.total_deposits,
+                        total_deposits: s.total_deposits,
+                        totalWithdrawals: s.total_withdrawals,
+                        total_withdrawals: s.total_withdrawals,
+                        fileName: s.file_name,
+                        file_name: s.file_name,
+                        importMethod: s.import_method,
+                        import_method: s.import_method,
+                        importedBy: s.imported_by,
+                        imported_by: s.imported_by,
+                        importedAt: s.imported_at,
+                        imported_at: s.imported_at
+                    }));
+                }
+
+                // Fetch bank transactions from Supabase
+                const { data: bankTxns, error: bankTxnError } = await supabaseClient
+                    .from('bank_transactions')
+                    .select('*')
+                    .order('transaction_date', { ascending: false });
+
+                if (bankTxnError) {
+                    console.warn('Failed to fetch bank transactions:', bankTxnError);
+                } else if (bankTxns && bankTxns.length > 0) {
+                    appData.bankTransactions = bankTxns.map(t => ({
+                        id: t.id,
+                        statementId: t.statement_id,
+                        statement_id: t.statement_id,
+                        date: t.transaction_date,
+                        transaction_date: t.transaction_date,
+                        postDate: t.post_date,
+                        post_date: t.post_date,
+                        description: t.description,
+                        originalDescription: t.original_description,
+                        original_description: t.original_description,
+                        amount: t.amount,
+                        type: t.transaction_type,
+                        transaction_type: t.transaction_type,
+                        categoryId: t.category_id,
+                        category_id: t.category_id,
+                        isReconciled: t.is_reconciled,
+                        is_reconciled: t.is_reconciled,
+                        reconciledWithStripe: t.reconciled_with_stripe,
+                        reconciled_with_stripe: t.reconciled_with_stripe,
+                        isTaxDeductible: t.is_tax_deductible,
+                        is_tax_deductible: t.is_tax_deductible,
+                        notes: t.notes,
+                        createdAt: t.created_at
                     }));
                 }
 
