@@ -2031,6 +2031,102 @@
         </div>
     </div>
 
+    <!-- Member Details Modal (Phase 2) -->
+    <div class="modal-overlay" id="member-details-modal">
+        <div class="modal" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Member Details</h3>
+                <button class="modal-close" onclick="closeModal('member-details-modal')">&times;</button>
+            </div>
+            <div class="modal-body" style="max-height: 600px; overflow-y: auto;">
+                <!-- Member Info Header -->
+                <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--gray-200);">
+                    <div id="member-detail-avatar" style="width: 60px; height: 60px; border-radius: 50%; background: var(--brand-primary); display: flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: 600; color: white;">--</div>
+                    <div style="flex: 1;">
+                        <h2 id="member-detail-name" style="font-size: 1.25rem; margin: 0; color: var(--navy);">Member Name</h2>
+                        <p id="member-detail-email" style="margin: 0.25rem 0 0; color: var(--gray-500); font-size: 0.875rem;">email@example.com</p>
+                    </div>
+                    <div id="member-detail-status-badge">
+                        <span class="badge badge-success">Active</span>
+                    </div>
+                </div>
+
+                <!-- Stats Cards -->
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem;">
+                    <div style="background: var(--gray-50); padding: 1rem; border-radius: var(--radius-md); text-align: center;">
+                        <div style="font-size: 0.7rem; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.05em;">Monthly Rate</div>
+                        <div id="member-detail-rate" style="font-size: 1.5rem; font-weight: 600; color: var(--navy);">$0</div>
+                    </div>
+                    <div style="background: var(--gray-50); padding: 1rem; border-radius: var(--radius-md); text-align: center;">
+                        <div style="font-size: 0.7rem; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.05em;">Total Paid</div>
+                        <div id="member-detail-total" style="font-size: 1.5rem; font-weight: 600; color: var(--success);">$0</div>
+                    </div>
+                    <div style="background: var(--gray-50); padding: 1rem; border-radius: var(--radius-md); text-align: center;">
+                        <div style="font-size: 0.7rem; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.05em;">Member Since</div>
+                        <div id="member-detail-since" style="font-size: 1rem; font-weight: 600; color: var(--navy);">--</div>
+                    </div>
+                </div>
+
+                <!-- Subscription Details -->
+                <div style="margin-bottom: 1.5rem;">
+                    <h4 style="font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gray-600); margin-bottom: 0.75rem;">Subscription Details</h4>
+                    <div style="background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius-md); padding: 1rem;">
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;">
+                            <div>
+                                <div style="font-size: 0.75rem; color: var(--gray-500);">Plan</div>
+                                <div id="member-detail-plan" style="font-weight: 500;">--</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.75rem; color: var(--gray-500);">Billing Frequency</div>
+                                <div id="member-detail-frequency" style="font-weight: 500;">--</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.75rem; color: var(--gray-500);">Last Payment</div>
+                                <div id="member-detail-last-payment" style="font-weight: 500;">--</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.75rem; color: var(--gray-500);">Kajabi ID</div>
+                                <div id="member-detail-kajabi-id" style="font-weight: 500; font-family: monospace; font-size: 0.875rem;">--</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Payment History -->
+                <div>
+                    <h4 style="font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gray-600); margin-bottom: 0.75rem;">Payment History</h4>
+                    <div style="background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius-md); overflow: hidden;">
+                        <table class="data-table" style="margin: 0;">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Amount</th>
+                                    <th>Status</th>
+                                    <th>Account</th>
+                                </tr>
+                            </thead>
+                            <tbody id="member-detail-payments">
+                                <tr>
+                                    <td colspan="4" class="text-center text-muted" style="padding: 2rem;">No payment history found</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Notes Section -->
+                <div style="margin-top: 1.5rem;">
+                    <h4 style="font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gray-600); margin-bottom: 0.75rem;">Notes</h4>
+                    <textarea id="member-detail-notes" style="width: 100%; min-height: 80px; padding: 0.75rem; border: 1px solid var(--gray-300); border-radius: var(--radius-md); font-family: inherit; resize: vertical;" placeholder="Add notes about this member..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('member-details-modal')">Close</button>
+                <button class="btn btn-primary" onclick="saveMemberNotes()">Save Notes</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ============================================
          JAVASCRIPT
          ============================================ -->
@@ -3158,8 +3254,87 @@
         }
 
         function viewMember(memberId) {
-            // TODO: Open member detail modal
-            alert('Member detail view coming in Phase 2');
+            const member = appData.members.find(m => m.id === memberId || m.email === memberId);
+            if (!member) {
+                alert('Member not found');
+                return;
+            }
+
+            // Get payment history for this member
+            const payments = appData.stripeTransactions
+                .filter(t => t.member_email === member.email)
+                .sort((a, b) => new Date(b.transaction_date || b.date) - new Date(a.transaction_date || a.date));
+
+            // Calculate total paid
+            const totalPaid = payments
+                .filter(p => p.status === 'succeeded')
+                .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+
+            // Get initials
+            const name = member.name || member.fullName || 'Unknown';
+            const initials = name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+
+            // Populate modal
+            document.getElementById('member-detail-avatar').textContent = initials;
+            document.getElementById('member-detail-name').textContent = name;
+            document.getElementById('member-detail-email').textContent = member.email || '--';
+
+            // Status badge
+            const status = member.subscription_status || member.status || 'unknown';
+            const statusBadge = getStatusBadge(status);
+            document.getElementById('member-detail-status-badge').innerHTML = statusBadge;
+
+            // Stats
+            document.getElementById('member-detail-rate').textContent = '$' + formatCurrency(member.subscription_amount || member.amount || 0);
+            document.getElementById('member-detail-total').textContent = '$' + formatCurrency(totalPaid);
+
+            const joinDate = member.join_date || member.joinDate || member.createdAt;
+            document.getElementById('member-detail-since').textContent = joinDate ? formatDate(joinDate) : '--';
+
+            // Subscription details
+            document.getElementById('member-detail-plan').textContent = member.subscription_plan || member.plan || member.offerName || 'Standard';
+            document.getElementById('member-detail-frequency').textContent = (member.billing_frequency || member.billingFrequency || 'monthly').charAt(0).toUpperCase() + (member.billing_frequency || member.billingFrequency || 'monthly').slice(1);
+
+            const lastPayment = payments.find(p => p.status === 'succeeded');
+            document.getElementById('member-detail-last-payment').textContent = lastPayment ? formatDate(lastPayment.transaction_date || lastPayment.date) : 'No payments';
+            document.getElementById('member-detail-kajabi-id').textContent = member.kajabi_id || member.kajabiId || '--';
+
+            // Payment history table
+            const paymentsBody = document.getElementById('member-detail-payments');
+            if (payments.length === 0) {
+                paymentsBody.innerHTML = `<tr><td colspan="4" class="text-center text-muted" style="padding: 2rem;">No payment history found</td></tr>`;
+            } else {
+                paymentsBody.innerHTML = payments.slice(0, 20).map(p => {
+                    const statusClass = p.status === 'succeeded' ? 'success' : p.status === 'failed' ? 'danger' : 'warning';
+                    return `
+                        <tr>
+                            <td>${formatDate(p.transaction_date || p.date)}</td>
+                            <td>$${formatCurrency(p.amount)}</td>
+                            <td><span class="badge badge-${statusClass}">${p.status || 'unknown'}</span></td>
+                            <td>${p.stripe_account || p.account || '--'}</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            // Notes
+            document.getElementById('member-detail-notes').value = member.notes || '';
+            document.getElementById('member-detail-notes').dataset.memberId = member.id || member.email;
+
+            openModal('member-details-modal');
+        }
+
+        function saveMemberNotes() {
+            const notesField = document.getElementById('member-detail-notes');
+            const memberId = notesField.dataset.memberId;
+            const notes = notesField.value;
+
+            const member = appData.members.find(m => m.id === memberId || m.email === memberId);
+            if (member) {
+                member.notes = notes;
+                saveToLocalStorage();
+                alert('Notes saved!');
+            }
         }
 
         // ============================================
