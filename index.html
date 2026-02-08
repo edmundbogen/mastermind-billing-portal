@@ -2208,6 +2208,41 @@
         </div>
     </div>
 
+    <!-- Import Backup Modal -->
+    <div class="modal-overlay" id="import-backup-modal">
+        <div class="modal" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Import Backup</h3>
+                <button class="modal-close" onclick="closeModal('import-backup-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">Restore data from a previously exported JSON backup file.</p>
+                <div class="form-group">
+                    <label for="backup-file">Backup File (JSON)</label>
+                    <input type="file" id="backup-file" accept=".json">
+                </div>
+                <div class="alert alert-warning">
+                    <div class="alert-icon">&#9888;</div>
+                    <div class="alert-content">
+                        <div class="alert-message">
+                            <strong>Warning:</strong> This will replace all current data with the backup. Make sure to export your current data first if needed.
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                        <input type="checkbox" id="backup-confirm" required>
+                        I understand this will replace all current data
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('import-backup-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="importBackupFile()">Import Backup</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Add Transaction Modal -->
     <div class="modal-overlay" id="add-transaction-modal">
         <div class="modal" style="max-width: 500px;">
@@ -5076,6 +5111,102 @@
         function exportAllData() {
             const data = JSON.stringify(appData, null, 2);
             downloadFile(data, 'mastermind-billing-backup.json', 'application/json');
+        }
+
+        function importBackupFile() {
+            const fileInput = document.getElementById('backup-file');
+            const confirmCheckbox = document.getElementById('backup-confirm');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                alert('Please select a backup file.');
+                return;
+            }
+
+            if (!confirmCheckbox.checked) {
+                alert('Please confirm that you understand this will replace all current data.');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const parsed = JSON.parse(e.target.result);
+
+                    // Validate the backup has expected structure
+                    if (!parsed || typeof parsed !== 'object') {
+                        throw new Error('Invalid backup file format');
+                    }
+
+                    // Check for at least some expected fields
+                    const expectedFields = ['members', 'stripeTransactions', 'discrepancies'];
+                    const hasValidStructure = expectedFields.some(field =>
+                        Array.isArray(parsed[field])
+                    );
+
+                    if (!hasValidStructure) {
+                        throw new Error('Backup file does not contain valid portal data');
+                    }
+
+                    // Helper functions for safe parsing
+                    const safeArray = arr => Array.isArray(arr) ? arr : [];
+                    const safeObject = obj => (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
+
+                    // Restore data with validation
+                    appData = {
+                        members: safeArray(parsed.members),
+                        stripeTransactions: safeArray(parsed.stripeTransactions),
+                        discrepancies: safeArray(parsed.discrepancies),
+                        importLogs: safeArray(parsed.importLogs),
+                        settings: safeObject(parsed.settings),
+                        bankTransactions: safeArray(parsed.bankTransactions),
+                        bankStatements: safeArray(parsed.bankStatements),
+                        expenseCategories: safeArray(parsed.expenseCategories).length > 0
+                            ? safeArray(parsed.expenseCategories)
+                            : getDefaultCategories(),
+                        vendorMappings: Object.keys(safeObject(parsed.vendorMappings)).length > 0
+                            ? safeObject(parsed.vendorMappings)
+                            : getDefaultVendorMappings(),
+                        stripePayoutMatches: safeArray(parsed.stripePayoutMatches),
+                        syncQueue: [],
+                        syncStatus: {}
+                    };
+
+                    // Log the import
+                    appData.importLogs.push({
+                        id: generateId(),
+                        import_type: 'backup_restore',
+                        file_name: file.name,
+                        records_imported: appData.members.length + appData.stripeTransactions.length + appData.bankTransactions.length,
+                        imported_by: currentUser?.name || 'System',
+                        imported_at: new Date().toISOString()
+                    });
+
+                    // Save and sync
+                    saveToLocalStorage(true);
+
+                    // Refresh UI
+                    refreshDashboard();
+                    if (typeof refreshMembersTable === 'function') refreshMembersTable();
+                    if (typeof refreshBookkeeping === 'function') refreshBookkeeping();
+
+                    closeModal('import-backup-modal');
+                    fileInput.value = '';
+                    confirmCheckbox.checked = false;
+
+                    alert(`Backup restored successfully!\n\nMembers: ${appData.members.length}\nStripe Transactions: ${appData.stripeTransactions.length}\nBank Transactions: ${appData.bankTransactions.length}`);
+
+                } catch (error) {
+                    console.error('Backup import error:', error);
+                    alert('Failed to import backup: ' + error.message);
+                }
+            };
+
+            reader.onerror = function() {
+                alert('Failed to read the backup file.');
+            };
+
+            reader.readAsText(file);
         }
 
         function downloadFile(content, filename, mimeType) {
