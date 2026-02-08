@@ -3191,6 +3191,10 @@
                     };
                     currentUser = { ...profile, email };
                     errorEl.classList.remove('show');
+
+                    // Sync data from Supabase now that we're authenticated
+                    await fullSync();
+
                     showApp();
                 }
             } catch (error) {
