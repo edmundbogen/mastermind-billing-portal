@@ -2603,17 +2603,27 @@
                 try {
                     supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
                     syncStatus = 'online';
+                    syncManager.isOnline = true;
                     updateSyncStatus();
                     console.log('Supabase connected');
+
+                    // Setup realtime subscriptions for conflict detection
+                    await setupRealtimeSubscriptions();
+
+                    // Replay any pending offline operations
+                    await replaySyncQueue();
+
                     // Initial sync from cloud
                     await fullSync();
                 } catch (e) {
                     console.warn('Supabase initialization failed:', e);
                     syncStatus = 'offline';
+                    syncManager.isOnline = false;
                     updateSyncStatus();
                 }
             } else {
                 syncStatus = 'offline';
+                syncManager.isOnline = false;
                 updateSyncStatus();
                 console.log('Running in offline mode (localStorage only)');
             }
@@ -2627,18 +2637,45 @@
 
             if (!dot || !text) return;
 
+            // Get pending sync counts
+            const pendingCounts = getPendingSyncCount();
+            const hasPending = pendingCounts.pending > 0 || pendingCounts.failed > 0 || pendingCounts.conflicts > 0;
+
             if (syncStatus === 'syncing') {
                 dot.className = 'sync-dot syncing';
                 text.textContent = 'Syncing...';
             } else if (syncStatus === 'online') {
                 dot.className = 'sync-dot';
-                text.textContent = 'Synced';
+                if (hasPending) {
+                    if (pendingCounts.conflicts > 0) {
+                        text.textContent = `${pendingCounts.conflicts} conflict(s)`;
+                        dot.className = 'sync-dot error';
+                    } else if (pendingCounts.failed > 0) {
+                        text.textContent = `${pendingCounts.failed} failed`;
+                        dot.className = 'sync-dot error';
+                    } else {
+                        text.textContent = `${pendingCounts.pending} pending`;
+                        dot.className = 'sync-dot offline';
+                    }
+                } else {
+                    text.textContent = 'Synced';
+                }
             } else if (syncStatus === 'offline') {
                 dot.className = 'sync-dot offline';
-                text.textContent = 'Offline';
+                if (pendingCounts.pending > 0) {
+                    text.textContent = `Offline (${pendingCounts.pending} queued)`;
+                } else {
+                    text.textContent = 'Offline';
+                }
             } else {
                 dot.className = 'sync-dot error';
-                text.textContent = 'Error';
+                if (pendingCounts.conflicts > 0) {
+                    text.textContent = `${pendingCounts.conflicts} conflict(s)`;
+                } else if (pendingCounts.failed > 0) {
+                    text.textContent = `${pendingCounts.failed} failed`;
+                } else {
+                    text.textContent = 'Error';
+                }
             }
         }
 
@@ -2646,240 +2683,611 @@
             // Load app data
             const storedData = localStorage.getItem(STORAGE_KEYS.DATA);
             if (storedData) {
-                const parsed = JSON.parse(storedData);
-                // Merge with defaults to ensure new fields exist
-                appData = {
-                    members: parsed.members || [],
-                    stripeTransactions: parsed.stripeTransactions || [],
-                    discrepancies: parsed.discrepancies || [],
-                    importLogs: parsed.importLogs || [],
-                    settings: parsed.settings || {},
-                    // Bookkeeping data - use stored or defaults
-                    bankTransactions: parsed.bankTransactions || [],
-                    bankStatements: parsed.bankStatements || [],
-                    expenseCategories: parsed.expenseCategories || getDefaultCategories(),
-                    vendorMappings: parsed.vendorMappings || getDefaultVendorMappings(),
-                    stripePayoutMatches: parsed.stripePayoutMatches || []
-                };
+                try {
+                    const parsed = JSON.parse(storedData);
+
+                    // Deep sanitization to protect against prototype pollution
+                    // Recursively sanitizes objects and arrays
+                    const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+                    const MAX_DEPTH = 10; // Prevent stack overflow on circular refs
+
+                    const deepSanitize = (value, depth = 0) => {
+                        if (depth > MAX_DEPTH) return null;
+                        if (value === null || value === undefined) return value;
+                        if (typeof value !== 'object') return value;
+
+                        if (Array.isArray(value)) {
+                            return value
+                                .filter(item => item !== null && typeof item === 'object' ?
+                                    !DANGEROUS_KEYS.has(Object.keys(item)[0]) : true)
+                                .map(item => deepSanitize(item, depth + 1));
+                        }
+
+                        const safe = Object.create(null);
+                        for (const key of Object.keys(value)) {
+                            if (DANGEROUS_KEYS.has(key)) continue;
+                            safe[key] = deepSanitize(value[key], depth + 1);
+                        }
+                        return safe;
+                    };
+
+                    const safeArray = (arr) => {
+                        if (!Array.isArray(arr)) return [];
+                        return deepSanitize(arr);
+                    };
+
+                    const safeObject = (obj) => {
+                        if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return {};
+                        return deepSanitize(obj);
+                    };
+
+                    // Build appData with validated fields only
+                    appData = {
+                        members: safeArray(parsed.members),
+                        stripeTransactions: safeArray(parsed.stripeTransactions),
+                        discrepancies: safeArray(parsed.discrepancies),
+                        importLogs: safeArray(parsed.importLogs),
+                        settings: safeObject(parsed.settings),
+                        // Bookkeeping data - use stored or defaults
+                        bankTransactions: safeArray(parsed.bankTransactions),
+                        bankStatements: safeArray(parsed.bankStatements),
+                        expenseCategories: safeArray(parsed.expenseCategories).length > 0
+                            ? safeArray(parsed.expenseCategories)
+                            : getDefaultCategories(),
+                        vendorMappings: Object.keys(safeObject(parsed.vendorMappings)).length > 0
+                            ? safeObject(parsed.vendorMappings)
+                            : getDefaultVendorMappings(),
+                        stripePayoutMatches: safeArray(parsed.stripePayoutMatches),
+                        // Sync queue for offline changes
+                        syncQueue: safeArray(parsed.syncQueue) || [],
+                        // Per-record sync status
+                        syncStatus: safeObject(parsed.syncStatus) || {}
+                    };
+                } catch (e) {
+                    console.error('Error loading data from localStorage:', e);
+                    // Keep defaults on parse error
+                }
             }
+
+            // Ensure sync structures exist
+            if (!appData.syncQueue) appData.syncQueue = [];
+            if (!appData.syncStatus) appData.syncStatus = {};
         }
+
+        // localStorage size monitoring
+        const storageMonitor = {
+            WARNING_THRESHOLD: 4 * 1024 * 1024, // 4MB warning
+            CRITICAL_THRESHOLD: 4.5 * 1024 * 1024, // 4.5MB critical
+            lastWarningTime: 0,
+            WARNING_COOLDOWN: 300000, // Only warn every 5 minutes
+
+            getUsedSpace() {
+                let total = 0;
+                for (const key in localStorage) {
+                    if (localStorage.hasOwnProperty(key)) {
+                        total += localStorage.getItem(key).length * 2; // UTF-16 = 2 bytes per char
+                    }
+                }
+                return total;
+            },
+
+            checkAndWarn() {
+                const used = this.getUsedSpace();
+                const now = Date.now();
+
+                if (used > this.CRITICAL_THRESHOLD) {
+                    console.error(`localStorage critically full: ${(used / 1024 / 1024).toFixed(2)}MB`);
+                    if (now - this.lastWarningTime > this.WARNING_COOLDOWN) {
+                        this.lastWarningTime = now;
+                        updateSyncStatus('error');
+                        alert('Storage is almost full! Please export your data and clear old records to prevent data loss.');
+                    }
+                    return false;
+                } else if (used > this.WARNING_THRESHOLD) {
+                    console.warn(`localStorage usage high: ${(used / 1024 / 1024).toFixed(2)}MB`);
+                    if (now - this.lastWarningTime > this.WARNING_COOLDOWN) {
+                        this.lastWarningTime = now;
+                    }
+                }
+                return true;
+            },
+
+            pruneOldData() {
+                // Prune import logs older than 90 days
+                const ninetyDaysAgo = Date.now() - (90 * 24 * 60 * 60 * 1000);
+                const originalLogCount = appData.importLogs?.length || 0;
+                appData.importLogs = (appData.importLogs || []).filter(log => {
+                    const logDate = new Date(log.imported_at || log.date || 0).getTime();
+                    return logDate > ninetyDaysAgo;
+                });
+
+                // Prune resolved discrepancies older than 30 days
+                const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
+                const originalDiscCount = appData.discrepancies?.length || 0;
+                appData.discrepancies = (appData.discrepancies || []).filter(d => {
+                    if (d.status !== 'resolved') return true;
+                    const resolvedDate = new Date(d.resolved_at || 0).getTime();
+                    return resolvedDate > thirtyDaysAgo;
+                });
+
+                const pruned = (originalLogCount - appData.importLogs.length) +
+                              (originalDiscCount - appData.discrepancies.length);
+                if (pruned > 0) {
+                    console.log(`Pruned ${pruned} old records to save space`);
+                }
+                return pruned;
+            }
+        };
 
         function saveToLocalStorage(pushToCloud = false) {
-            // User auth is handled by Supabase Auth - only save app data
-            localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(appData));
+            // Check storage before saving
+            if (!storageMonitor.checkAndWarn()) {
+                // Try to prune old data if critically full
+                storageMonitor.pruneOldData();
+            }
+
+            try {
+                // User auth is handled by Supabase Auth - only save app data
+                localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(appData));
+            } catch (e) {
+                if (e.name === 'QuotaExceededError') {
+                    console.error('localStorage quota exceeded');
+                    // Try pruning and retry
+                    storageMonitor.pruneOldData();
+                    try {
+                        localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(appData));
+                    } catch (retryError) {
+                        alert('Storage full! Please export your data immediately. Some data may not be saved.');
+                        updateSyncStatus('error');
+                    }
+                } else {
+                    throw e;
+                }
+            }
+
             // Only sync to cloud when explicitly requested (after CSV imports)
-            if (pushToCloud && supabaseClient && syncStatus === 'online') {
-                syncToSupabase();
+            if (pushToCloud) {
+                if (supabaseClient && syncManager.isOnline) {
+                    syncToSupabase();
+                } else {
+                    // Queue the sync for when we're back online
+                    console.log('Offline - changes saved locally and queued for sync');
+                    updateSyncStatus('offline');
+                }
             }
         }
 
+        // Helper to track and queue a specific record change
+        function trackRecordChange(table, data, operation = 'upsert') {
+            if (!syncManager.isOnline) {
+                // Queue for later sync
+                queueSyncOperation({ type: operation, table, data });
+            }
+
+            // Update per-record sync status
+            const recordKey = `${table}:${data.id || data.email}`;
+            if (!appData.syncStatus) appData.syncStatus = {};
+            appData.syncStatus[recordKey] = {
+                status: syncManager.isOnline ? 'pending' : 'queued',
+                lastModified: new Date().toISOString()
+            };
+        }
+
         // ============================================
-        // SUPABASE SYNC FUNCTIONS
+        // ADVANCED SYNC SYSTEM
         // ============================================
 
-        let isSyncing = false;
-        let lastSyncTime = null;
+        // Sync state management
+        const syncManager = {
+            // Promise-based lock to prevent race conditions
+            _syncLock: null,
+            _lockQueue: [],
+            lastSyncTime: null,
+            isOnline: navigator.onLine,
+            realtimeSubscriptions: [],
 
-        async function syncToSupabase() {
-            if (!supabaseClient || isSyncing) return;
+            // Acquire sync lock with queuing
+            async acquireLock() {
+                if (this._syncLock) {
+                    // Wait for existing lock to release
+                    return new Promise((resolve) => {
+                        this._lockQueue.push(resolve);
+                    });
+                }
+                this._syncLock = true;
+                return Promise.resolve();
+            },
 
-            isSyncing = true;
+            // Release sync lock
+            releaseLock() {
+                this._syncLock = null;
+                if (this._lockQueue.length > 0) {
+                    const next = this._lockQueue.shift();
+                    this._syncLock = true;
+                    next();
+                }
+            },
+
+            // Check if we can sync
+            canSync() {
+                return supabaseClient && this.isOnline && !this._syncLock;
+            }
+        };
+
+        // Initialize online/offline detection
+        window.addEventListener('online', async () => {
+            syncManager.isOnline = true;
+            updateSyncStatus('syncing');
+            console.log('Back online - replaying sync queue');
+            await replaySyncQueue();
+        });
+
+        window.addEventListener('offline', () => {
+            syncManager.isOnline = false;
+            updateSyncStatus('offline');
+            console.log('Gone offline - changes will be queued');
+        });
+
+        // ============================================
+        // SYNC QUEUE FOR OFFLINE CHANGES
+        // ============================================
+
+        function queueSyncOperation(operation) {
+            if (!appData.syncQueue) appData.syncQueue = [];
+
+            const queueItem = {
+                id: generateId(),
+                operation: operation.type, // 'upsert', 'delete'
+                table: operation.table,
+                data: operation.data,
+                timestamp: new Date().toISOString(),
+                retryCount: 0,
+                status: 'pending' // 'pending', 'syncing', 'failed', 'completed'
+            };
+
+            appData.syncQueue.push(queueItem);
+
+            // Update per-record sync status
+            const recordKey = `${operation.table}:${operation.data.id || operation.data.email}`;
+            if (!appData.syncStatus) appData.syncStatus = {};
+            appData.syncStatus[recordKey] = {
+                status: 'pending',
+                lastAttempt: null,
+                queueId: queueItem.id
+            };
+
+            // Save queue to localStorage
+            try {
+                localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(appData));
+            } catch (e) {
+                console.error('Failed to save sync queue:', e);
+            }
+
+            return queueItem.id;
+        }
+
+        async function replaySyncQueue() {
+            if (!supabaseClient || !syncManager.isOnline) return;
+            if (!appData.syncQueue || appData.syncQueue.length === 0) {
+                updateSyncStatus('online');
+                return;
+            }
+
+            await syncManager.acquireLock();
             updateSyncStatus('syncing');
 
             try {
-                // User auth is handled by Supabase Auth - no separate user sync needed
+                const pendingItems = appData.syncQueue.filter(item =>
+                    item.status === 'pending' || item.status === 'failed'
+                );
 
-                // Sync members
-                if (appData.members && appData.members.length > 0) {
-                    for (const member of appData.members) {
-                        const memberData = {
-                            email: member.email,
-                            name: member.name || member.fullName || 'Unknown',
-                            kajabi_id: member.kajabiId || null,
-                            subscription_plan: member.plan || member.offerName || null,
-                            subscription_amount: parseFloat(member.amount) || 0,
-                            billing_frequency: member.billingFrequency || 'monthly',
-                            subscription_status: member.status || 'active',
-                            join_date: member.joinDate || member.createdAt || null,
-                            last_payment_date: member.lastPaymentDate || null,
-                            total_paid: parseFloat(member.totalPaid) || 0,
-                            notes: member.notes || null,
-                            updated_at: new Date().toISOString()
-                        };
+                console.log(`Replaying ${pendingItems.length} queued sync operations`);
 
-                        const { error } = await supabaseClient
-                            .from('members')
-                            .upsert(memberData, { onConflict: 'email' });
+                for (const item of pendingItems) {
+                    item.status = 'syncing';
+                    item.retryCount++;
 
-                        if (error) console.warn('Member sync error:', error);
-                    }
-                }
+                    try {
+                        if (item.operation === 'upsert') {
+                            const { error } = await supabaseClient
+                                .from(item.table)
+                                .upsert(item.data, { onConflict: item.data.id ? 'id' : 'email' });
 
-                // Sync stripe transactions
-                if (appData.stripeTransactions && appData.stripeTransactions.length > 0) {
-                    for (const txn of appData.stripeTransactions) {
-                        const txnData = {
-                            stripe_id: txn.id || txn.stripeId || `local_${Date.now()}_${Math.random()}`,
-                            stripe_account: txn.account || txn.stripeAccount || 'reignation',
-                            member_email: txn.member_email || txn.email || txn.customerEmail || null,
-                            customer_name: txn.customer_name || txn.name || txn.customerName || null,
-                            amount: parseFloat(txn.amount) || 0,
-                            fee: parseFloat(txn.fee) || 0,
-                            net_amount: parseFloat(txn.netAmount) || parseFloat(txn.amount) - parseFloat(txn.fee) || 0,
-                            status: txn.status || 'succeeded',
-                            transaction_date: txn.date || txn.created || new Date().toISOString(),
-                            description: txn.description || null,
-                            product_name: txn.productName || null
-                        };
+                            if (error) throw error;
+                        } else if (item.operation === 'delete') {
+                            const { error } = await supabaseClient
+                                .from(item.table)
+                                .delete()
+                                .eq('id', item.data.id);
 
-                        const { error } = await supabaseClient
-                            .from('stripe_transactions')
-                            .upsert(txnData, { onConflict: 'stripe_id' });
+                            if (error) throw error;
+                        }
 
-                        if (error) console.warn('Transaction sync error:', error);
-                    }
-                }
+                        item.status = 'completed';
 
-                // Sync discrepancies
-                if (appData.discrepancies && appData.discrepancies.length > 0) {
-                    for (const disc of appData.discrepancies) {
-                        const discData = {
-                            member_email: disc.email || disc.memberEmail || null,
-                            member_name: disc.name || disc.memberName || null,
-                            discrepancy_type: disc.type || disc.discrepancyType || 'amount_mismatch',
-                            expected_amount: parseFloat(disc.expectedAmount) || null,
-                            actual_amount: parseFloat(disc.actualAmount) || null,
-                            difference: parseFloat(disc.difference) || null,
-                            stripe_account: disc.stripeAccount || null,
-                            status: disc.status || 'open',
-                            priority: disc.priority || 'medium',
-                            resolution_notes: disc.notes || disc.resolutionNotes || null
-                        };
+                        // Update per-record status
+                        const recordKey = `${item.table}:${item.data.id || item.data.email}`;
+                        if (appData.syncStatus[recordKey]) {
+                            appData.syncStatus[recordKey].status = 'synced';
+                            appData.syncStatus[recordKey].lastSync = new Date().toISOString();
+                        }
 
-                        const { error } = await supabaseClient
-                            .from('billing_discrepancies')
-                            .insert(discData);
+                    } catch (error) {
+                        console.warn(`Sync failed for ${item.table}:`, error);
+                        item.status = item.retryCount >= 3 ? 'failed' : 'pending';
 
-                        if (error && !error.message.includes('duplicate')) {
-                            console.warn('Discrepancy sync error:', error);
+                        const recordKey = `${item.table}:${item.data.id || item.data.email}`;
+                        if (appData.syncStatus[recordKey]) {
+                            appData.syncStatus[recordKey].status = 'failed';
+                            appData.syncStatus[recordKey].lastError = error.message;
                         }
                     }
                 }
 
-                // Sync import logs
-                if (appData.importLogs && appData.importLogs.length > 0) {
-                    for (const log of appData.importLogs) {
-                        const logData = {
-                            import_type: log.type || log.importType || 'kajabi_members',
-                            file_name: log.fileName || log.filename || null,
-                            records_total: log.total || log.recordsTotal || 0,
-                            records_imported: log.imported || log.recordsImported || 0,
-                            records_skipped: log.skipped || log.recordsSkipped || 0,
-                            imported_by: log.importedBy || currentUser?.name || null,
-                            imported_at: log.date || log.importedAt || new Date().toISOString()
-                        };
+                // Clean up completed items older than 1 hour
+                const oneHourAgo = Date.now() - 3600000;
+                appData.syncQueue = appData.syncQueue.filter(item =>
+                    item.status !== 'completed' ||
+                    new Date(item.timestamp).getTime() > oneHourAgo
+                );
 
-                        const { error } = await supabaseClient
-                            .from('import_logs')
-                            .insert(logData);
+                saveToLocalStorage(false); // Don't trigger another sync
 
-                        if (error && !error.message.includes('duplicate')) {
-                            console.warn('Import log sync error:', error);
-                        }
-                    }
+                const failedCount = appData.syncQueue.filter(i => i.status === 'failed').length;
+                if (failedCount > 0) {
+                    updateSyncStatus('error');
+                } else {
+                    updateSyncStatus('online');
                 }
 
-                // Sync bank statements
-                if (appData.bankStatements && appData.bankStatements.length > 0) {
-                    for (const stmt of appData.bankStatements) {
-                        const stmtData = {
-                            id: stmt.id || undefined,
-                            account_name: stmt.accountName || stmt.account_name || 'Unknown Account',
-                            account_type: stmt.accountType || stmt.account_type || 'checking',
-                            statement_month: stmt.statementMonth || stmt.statement_month || new Date().toISOString().slice(0, 10),
-                            start_balance: parseFloat(stmt.startBalance || stmt.start_balance) || 0,
-                            end_balance: parseFloat(stmt.endBalance || stmt.end_balance) || 0,
-                            total_deposits: parseFloat(stmt.totalDeposits || stmt.total_deposits) || 0,
-                            total_withdrawals: parseFloat(stmt.totalWithdrawals || stmt.total_withdrawals) || 0,
-                            file_name: stmt.fileName || stmt.file_name || null,
-                            import_method: stmt.importMethod || stmt.import_method || 'csv',
-                            imported_by: stmt.importedBy || stmt.imported_by || currentUser?.name || null,
-                            imported_at: stmt.importedAt || stmt.imported_at || new Date().toISOString()
-                        };
+            } finally {
+                syncManager.releaseLock();
+            }
+        }
 
-                        const { error } = await supabaseClient
-                            .from('bank_statements')
-                            .upsert(stmtData, { onConflict: 'id' });
+        // ============================================
+        // TIMESTAMP-BASED MERGE LOGIC
+        // ============================================
 
-                        if (error && !error.message.includes('duplicate')) {
-                            console.warn('Bank statement sync error:', error);
+        function mergeRecords(localRecord, remoteRecord, conflictStrategy = 'remote-wins') {
+            if (!localRecord) return { merged: remoteRecord, hadConflict: false };
+            if (!remoteRecord) return { merged: localRecord, hadConflict: false };
+
+            const localTime = new Date(localRecord.updated_at || localRecord.createdAt || 0).getTime();
+            const remoteTime = new Date(remoteRecord.updated_at || remoteRecord.created_at || 0).getTime();
+
+            // Check for conflict (both modified since last sync)
+            const lastSyncTime = syncManager.lastSyncTime ? syncManager.lastSyncTime.getTime() : 0;
+            const hadConflict = localTime > lastSyncTime && remoteTime > lastSyncTime;
+
+            if (hadConflict) {
+                console.warn('Merge conflict detected:', {
+                    id: localRecord.id || localRecord.email,
+                    localTime: new Date(localTime).toISOString(),
+                    remoteTime: new Date(remoteTime).toISOString()
+                });
+            }
+
+            let merged;
+            switch (conflictStrategy) {
+                case 'local-wins':
+                    merged = localTime >= remoteTime ? localRecord : remoteRecord;
+                    break;
+                case 'remote-wins':
+                default:
+                    merged = remoteTime >= localTime ? remoteRecord : localRecord;
+                    break;
+                case 'merge-fields':
+                    // Merge individual fields, preferring newer values
+                    merged = { ...localRecord };
+                    for (const key of Object.keys(remoteRecord)) {
+                        if (key === 'updated_at' || key === 'created_at') continue;
+                        // If remote has a value and local doesn't, or remote is newer
+                        if (remoteRecord[key] !== null && remoteRecord[key] !== undefined) {
+                            if (localRecord[key] === null || localRecord[key] === undefined || remoteTime > localTime) {
+                                merged[key] = remoteRecord[key];
+                            }
                         }
                     }
+                    merged.updated_at = new Date().toISOString();
+                    break;
+            }
+
+            return { merged, hadConflict };
+        }
+
+        function mergeArrays(localArray, remoteArray, keyField = 'id') {
+            const merged = [];
+            const conflicts = [];
+            const localMap = new Map(localArray.map(item => [item[keyField] || item.email, item]));
+            const remoteMap = new Map(remoteArray.map(item => [item[keyField] || item.email, item]));
+            const allKeys = new Set([...localMap.keys(), ...remoteMap.keys()]);
+
+            for (const key of allKeys) {
+                const local = localMap.get(key);
+                const remote = remoteMap.get(key);
+                const { merged: mergedRecord, hadConflict } = mergeRecords(local, remote);
+
+                merged.push(mergedRecord);
+                if (hadConflict) {
+                    conflicts.push({ key, local, remote, resolved: mergedRecord });
                 }
+            }
 
-                // Sync bank transactions
-                if (appData.bankTransactions && appData.bankTransactions.length > 0) {
-                    for (const txn of appData.bankTransactions) {
-                        const txnData = {
-                            id: txn.id || undefined,
-                            statement_id: txn.statementId || txn.statement_id || null,
-                            transaction_date: txn.date || txn.transaction_date || new Date().toISOString().slice(0, 10),
-                            post_date: txn.postDate || txn.post_date || null,
-                            description: txn.description || 'No description',
-                            original_description: txn.originalDescription || txn.original_description || null,
-                            amount: parseFloat(txn.amount) || 0,
-                            transaction_type: txn.type || txn.transaction_type || 'expense',
-                            category_id: txn.categoryId || txn.category_id || null,
-                            is_reconciled: txn.isReconciled || txn.is_reconciled || false,
-                            reconciled_with_stripe: txn.reconciledWithStripe || txn.reconciled_with_stripe || null,
-                            is_tax_deductible: txn.isTaxDeductible || txn.is_tax_deductible || false,
-                            notes: txn.notes || null
-                        };
+            return { merged, conflicts };
+        }
 
-                        const { error } = await supabaseClient
-                            .from('bank_transactions')
-                            .upsert(txnData, { onConflict: 'id' });
+        // ============================================
+        // BATCHED SYNC OPERATIONS
+        // ============================================
 
-                        if (error && !error.message.includes('duplicate')) {
-                            console.warn('Bank transaction sync error:', error);
-                        }
+        async function batchUpsert(table, records, conflictField = 'id') {
+            if (!records || records.length === 0) return { success: true, errors: [] };
+
+            const BATCH_SIZE = 100;
+            const errors = [];
+
+            for (let i = 0; i < records.length; i += BATCH_SIZE) {
+                const batch = records.slice(i, i + BATCH_SIZE);
+
+                try {
+                    const { error } = await supabaseClient
+                        .from(table)
+                        .upsert(batch, { onConflict: conflictField });
+
+                    if (error) {
+                        console.warn(`Batch upsert error for ${table}:`, error);
+                        errors.push({ batch: i / BATCH_SIZE, error: error.message });
                     }
+                } catch (e) {
+                    errors.push({ batch: i / BATCH_SIZE, error: e.message });
+                }
+            }
+
+            return { success: errors.length === 0, errors };
+        }
+
+        // ============================================
+        // MAIN SYNC FUNCTIONS
+        // ============================================
+
+        async function syncToSupabase() {
+            if (!syncManager.canSync()) {
+                // Queue operations for later if offline
+                if (!syncManager.isOnline) {
+                    console.log('Offline - queuing sync operations');
+                    return;
+                }
+                // Wait for lock if another sync is in progress
+                await syncManager.acquireLock();
+            } else {
+                await syncManager.acquireLock();
+            }
+
+            updateSyncStatus('syncing');
+
+            try {
+                const now = new Date().toISOString();
+
+                // Prepare member data with updated_at
+                const memberData = (appData.members || []).map(member => ({
+                    email: member.email,
+                    name: member.name || member.fullName || 'Unknown',
+                    kajabi_id: member.kajabiId || member.kajabi_id || null,
+                    subscription_plan: member.plan || member.subscription_plan || member.offerName || null,
+                    subscription_amount: parseFloat(member.amount || member.subscription_amount) || 0,
+                    billing_frequency: member.billingFrequency || member.billing_frequency || 'monthly',
+                    subscription_status: member.status || member.subscription_status || 'active',
+                    join_date: member.joinDate || member.join_date || member.createdAt || null,
+                    last_payment_date: member.lastPaymentDate || member.last_payment_date || null,
+                    total_paid: parseFloat(member.totalPaid || member.total_paid) || 0,
+                    notes: member.notes || null,
+                    updated_at: now
+                }));
+
+                // Batch upsert members
+                if (memberData.length > 0) {
+                    const { errors } = await batchUpsert('members', memberData, 'email');
+                    if (errors.length > 0) console.warn('Member sync errors:', errors);
                 }
 
-                lastSyncTime = new Date();
+                // Prepare stripe transactions
+                const txnData = (appData.stripeTransactions || []).map(txn => ({
+                    stripe_id: txn.id || txn.stripeId || txn.stripe_id || `local_${generateId()}`,
+                    stripe_account: txn.account || txn.stripeAccount || txn.stripe_account || 'reignation',
+                    member_email: txn.member_email || txn.email || txn.customerEmail || null,
+                    customer_name: txn.customer_name || txn.name || txn.customerName || null,
+                    amount: parseFloat(txn.amount) || 0,
+                    fee: parseFloat(txn.fee) || 0,
+                    net_amount: parseFloat(txn.netAmount || txn.net_amount) || 0,
+                    status: txn.status || 'succeeded',
+                    transaction_date: txn.date || txn.transaction_date || txn.created || now,
+                    description: txn.description || null,
+                    product_name: txn.productName || txn.product_name || null
+                }));
+
+                if (txnData.length > 0) {
+                    const { errors } = await batchUpsert('stripe_transactions', txnData, 'stripe_id');
+                    if (errors.length > 0) console.warn('Transaction sync errors:', errors);
+                }
+
+                // Prepare discrepancies
+                const discData = (appData.discrepancies || []).map(disc => ({
+                    id: disc.id,
+                    member_email: disc.member_email || disc.email || disc.memberEmail || null,
+                    member_name: disc.member_name || disc.name || disc.memberName || null,
+                    discrepancy_type: disc.discrepancy_type || disc.type || disc.discrepancyType || 'amount_mismatch',
+                    expected_amount: parseFloat(disc.expected_amount || disc.expectedAmount) || null,
+                    actual_amount: parseFloat(disc.actual_amount || disc.actualAmount) || null,
+                    difference: parseFloat(disc.difference) || null,
+                    stripe_account: disc.stripe_account || disc.stripeAccount || null,
+                    status: disc.status || 'open',
+                    priority: disc.priority || 'medium',
+                    resolution_notes: disc.resolution_notes || disc.notes || disc.resolutionNotes || null,
+                    resolved_at: disc.resolved_at || null,
+                    resolved_by: disc.resolved_by || null,
+                    created_at: disc.created_at || disc.createdAt || now
+                }));
+
+                if (discData.length > 0) {
+                    const { errors } = await batchUpsert('billing_discrepancies', discData, 'id');
+                    if (errors.length > 0) console.warn('Discrepancy sync errors:', errors);
+                }
+
+                // Prepare bank transactions
+                const bankTxnData = (appData.bankTransactions || []).map(txn => ({
+                    id: txn.id,
+                    statement_id: txn.statementId || txn.statement_id || null,
+                    transaction_date: txn.date || txn.transaction_date || now.slice(0, 10),
+                    post_date: txn.postDate || txn.post_date || null,
+                    description: txn.description || 'No description',
+                    original_description: txn.originalDescription || txn.original_description || null,
+                    amount: parseFloat(txn.amount) || 0,
+                    transaction_type: txn.type || txn.transaction_type || 'expense',
+                    category_id: txn.categoryId || txn.category_id || null,
+                    is_reconciled: txn.isReconciled || txn.is_reconciled || false,
+                    reconciled_with_stripe: txn.reconciledWithStripe || txn.reconciled_with_stripe || null,
+                    is_tax_deductible: txn.isTaxDeductible || txn.is_tax_deductible || false,
+                    notes: txn.notes || null
+                }));
+
+                if (bankTxnData.length > 0) {
+                    const { errors } = await batchUpsert('bank_transactions', bankTxnData, 'id');
+                    if (errors.length > 0) console.warn('Bank transaction sync errors:', errors);
+                }
+
+                syncManager.lastSyncTime = new Date();
                 syncStatus = 'online';
                 updateSyncStatus();
-                console.log('Sync to Supabase completed:', lastSyncTime);
+                console.log('Sync to Supabase completed:', syncManager.lastSyncTime);
 
             } catch (error) {
                 console.error('Sync to Supabase failed:', error);
                 syncStatus = 'error';
                 updateSyncStatus();
             } finally {
-                isSyncing = false;
+                syncManager.releaseLock();
             }
         }
 
         async function syncFromSupabase() {
-            if (!supabaseClient || isSyncing) return;
+            if (!supabaseClient) return;
 
-            isSyncing = true;
+            await syncManager.acquireLock();
             updateSyncStatus('syncing');
 
             try {
-                // User auth is now handled by Supabase Auth (no separate user table sync needed)
+                // Fetch all data from Supabase
+                const [membersRes, txnsRes, discRes, bankTxnsRes] = await Promise.all([
+                    supabaseClient.from('members').select('*').order('updated_at', { ascending: false }),
+                    supabaseClient.from('stripe_transactions').select('*').order('transaction_date', { ascending: false }),
+                    supabaseClient.from('billing_discrepancies').select('*').order('created_at', { ascending: false }),
+                    supabaseClient.from('bank_transactions').select('*').order('transaction_date', { ascending: false })
+                ]);
 
-                // Fetch members from Supabase
-                const { data: members, error: membersError } = await supabaseClient
-                    .from('members')
-                    .select('*')
-                    .order('updated_at', { ascending: false });
-
-                if (membersError) {
-                    console.warn('Failed to fetch members:', membersError);
-                } else if (members && members.length > 0) {
-                    // Use Supabase as source of truth - replace local data
-                    appData.members = members.map(m => ({
+                // Process members with merge
+                if (!membersRes.error && membersRes.data) {
+                    const remoteMembers = membersRes.data.map(m => ({
                         id: m.id,
                         email: m.email,
                         name: m.name,
@@ -2903,21 +3311,20 @@
                         last_payment_date: m.last_payment_date,
                         totalPaid: m.total_paid,
                         total_paid: m.total_paid,
-                        notes: m.notes
+                        notes: m.notes,
+                        updated_at: m.updated_at
                     }));
+
+                    const { merged, conflicts } = mergeArrays(appData.members || [], remoteMembers, 'email');
+                    if (conflicts.length > 0) {
+                        console.warn(`${conflicts.length} member conflicts resolved`);
+                    }
+                    appData.members = merged;
                 }
 
-                // Fetch stripe transactions
-                const { data: transactions, error: txnError } = await supabaseClient
-                    .from('stripe_transactions')
-                    .select('*')
-                    .order('transaction_date', { ascending: false });
-
-                if (txnError) {
-                    console.warn('Failed to fetch transactions:', txnError);
-                } else if (transactions && transactions.length > 0) {
-                    // Use Supabase as source of truth - replace local data
-                    appData.stripeTransactions = transactions.map(t => ({
+                // Process stripe transactions
+                if (!txnsRes.error && txnsRes.data) {
+                    const remoteTxns = txnsRes.data.map(t => ({
                         id: t.stripe_id,
                         stripe_id: t.stripe_id,
                         stripeId: t.stripe_id,
@@ -2940,85 +3347,53 @@
                         created: t.transaction_date,
                         description: t.description,
                         product_name: t.product_name,
-                        productName: t.product_name
+                        productName: t.product_name,
+                        updated_at: t.created_at
                     }));
+
+                    const { merged } = mergeArrays(appData.stripeTransactions || [], remoteTxns, 'stripe_id');
+                    appData.stripeTransactions = merged;
                 }
 
-                // Fetch discrepancies
-                const { data: discrepancies, error: discError } = await supabaseClient
-                    .from('billing_discrepancies')
-                    .select('*')
-                    .order('created_at', { ascending: false });
-
-                if (discError) {
-                    console.warn('Failed to fetch discrepancies:', discError);
-                } else if (discrepancies) {
-                    appData.discrepancies = discrepancies.map(d => ({
+                // Process discrepancies
+                if (!discRes.error && discRes.data) {
+                    const remoteDisc = discRes.data.map(d => ({
                         id: d.id,
                         email: d.member_email,
+                        member_email: d.member_email,
                         memberEmail: d.member_email,
                         name: d.member_name,
+                        member_name: d.member_name,
                         memberName: d.member_name,
                         type: d.discrepancy_type,
+                        discrepancy_type: d.discrepancy_type,
                         discrepancyType: d.discrepancy_type,
                         expectedAmount: d.expected_amount,
+                        expected_amount: d.expected_amount,
                         actualAmount: d.actual_amount,
+                        actual_amount: d.actual_amount,
                         difference: d.difference,
                         stripeAccount: d.stripe_account,
+                        stripe_account: d.stripe_account,
                         status: d.status,
                         priority: d.priority,
                         notes: d.resolution_notes,
+                        resolution_notes: d.resolution_notes,
                         resolutionNotes: d.resolution_notes,
-                        createdAt: d.created_at
+                        createdAt: d.created_at,
+                        created_at: d.created_at,
+                        resolved_at: d.resolved_at,
+                        resolved_by: d.resolved_by,
+                        updated_at: d.created_at
                     }));
+
+                    const { merged } = mergeArrays(appData.discrepancies || [], remoteDisc, 'id');
+                    appData.discrepancies = merged;
                 }
 
-                // Fetch bank statements from Supabase
-                const { data: bankStatements, error: stmtError } = await supabaseClient
-                    .from('bank_statements')
-                    .select('*')
-                    .order('statement_month', { ascending: false });
-
-                if (stmtError) {
-                    console.warn('Failed to fetch bank statements:', stmtError);
-                } else if (bankStatements && bankStatements.length > 0) {
-                    appData.bankStatements = bankStatements.map(s => ({
-                        id: s.id,
-                        accountName: s.account_name,
-                        account_name: s.account_name,
-                        accountType: s.account_type,
-                        account_type: s.account_type,
-                        statementMonth: s.statement_month,
-                        statement_month: s.statement_month,
-                        startBalance: s.start_balance,
-                        start_balance: s.start_balance,
-                        endBalance: s.end_balance,
-                        end_balance: s.end_balance,
-                        totalDeposits: s.total_deposits,
-                        total_deposits: s.total_deposits,
-                        totalWithdrawals: s.total_withdrawals,
-                        total_withdrawals: s.total_withdrawals,
-                        fileName: s.file_name,
-                        file_name: s.file_name,
-                        importMethod: s.import_method,
-                        import_method: s.import_method,
-                        importedBy: s.imported_by,
-                        imported_by: s.imported_by,
-                        importedAt: s.imported_at,
-                        imported_at: s.imported_at
-                    }));
-                }
-
-                // Fetch bank transactions from Supabase
-                const { data: bankTxns, error: bankTxnError } = await supabaseClient
-                    .from('bank_transactions')
-                    .select('*')
-                    .order('transaction_date', { ascending: false });
-
-                if (bankTxnError) {
-                    console.warn('Failed to fetch bank transactions:', bankTxnError);
-                } else if (bankTxns && bankTxns.length > 0) {
-                    appData.bankTransactions = bankTxns.map(t => ({
+                // Process bank transactions
+                if (!bankTxnsRes.error && bankTxnsRes.data) {
+                    const remoteBankTxns = bankTxnsRes.data.map(t => ({
                         id: t.id,
                         statementId: t.statement_id,
                         statement_id: t.statement_id,
@@ -3041,28 +3416,109 @@
                         isTaxDeductible: t.is_tax_deductible,
                         is_tax_deductible: t.is_tax_deductible,
                         notes: t.notes,
-                        createdAt: t.created_at
+                        createdAt: t.created_at,
+                        updated_at: t.created_at
                     }));
+
+                    const { merged } = mergeArrays(appData.bankTransactions || [], remoteBankTxns, 'id');
+                    appData.bankTransactions = merged;
                 }
 
-                // Save merged data to localStorage
-                localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(appData));
+                // Save merged data
+                saveToLocalStorage(false);
 
-                lastSyncTime = new Date();
+                syncManager.lastSyncTime = new Date();
                 syncStatus = 'online';
                 updateSyncStatus();
-                console.log('Sync from Supabase completed:', lastSyncTime);
+                console.log('Sync from Supabase completed:', syncManager.lastSyncTime);
 
-                // Refresh UI if we're on a data-displaying tab
-                if (typeof renderMembers === 'function') renderMembers();
-                if (typeof updateDashboard === 'function') updateDashboard();
+                // Refresh UI
+                if (typeof refreshMembersTable === 'function') refreshMembersTable();
+                if (typeof refreshDashboard === 'function') refreshDashboard();
+                if (typeof refreshBookkeeping === 'function') refreshBookkeeping();
 
             } catch (error) {
                 console.error('Sync from Supabase failed:', error);
                 syncStatus = 'error';
                 updateSyncStatus();
             } finally {
-                isSyncing = false;
+                syncManager.releaseLock();
+            }
+        }
+
+        // ============================================
+        // REALTIME SUBSCRIPTIONS FOR CONFLICT DETECTION
+        // ============================================
+
+        async function setupRealtimeSubscriptions() {
+            if (!supabaseClient) return;
+
+            try {
+                // Subscribe to members table changes
+                const membersChannel = supabaseClient
+                    .channel('members-changes')
+                    .on('postgres_changes',
+                        { event: '*', schema: 'public', table: 'members' },
+                        (payload) => handleRealtimeChange('members', payload)
+                    )
+                    .subscribe();
+
+                // Subscribe to stripe transactions
+                const txnsChannel = supabaseClient
+                    .channel('transactions-changes')
+                    .on('postgres_changes',
+                        { event: '*', schema: 'public', table: 'stripe_transactions' },
+                        (payload) => handleRealtimeChange('stripe_transactions', payload)
+                    )
+                    .subscribe();
+
+                // Subscribe to discrepancies
+                const discChannel = supabaseClient
+                    .channel('discrepancies-changes')
+                    .on('postgres_changes',
+                        { event: '*', schema: 'public', table: 'billing_discrepancies' },
+                        (payload) => handleRealtimeChange('billing_discrepancies', payload)
+                    )
+                    .subscribe();
+
+                syncManager.realtimeSubscriptions = [membersChannel, txnsChannel, discChannel];
+                console.log('Realtime subscriptions established');
+
+            } catch (error) {
+                console.warn('Failed to setup realtime subscriptions:', error);
+            }
+        }
+
+        function handleRealtimeChange(table, payload) {
+            console.log(`Realtime change in ${table}:`, payload.eventType);
+
+            // Check if this change conflicts with pending local changes
+            const recordKey = `${table}:${payload.new?.id || payload.new?.email || payload.old?.id}`;
+            const localStatus = appData.syncStatus?.[recordKey];
+
+            if (localStatus?.status === 'pending') {
+                console.warn(`Conflict detected: Remote change to ${recordKey} while local change is pending`);
+                // Mark as conflicted for user resolution
+                appData.syncStatus[recordKey] = {
+                    ...localStatus,
+                    status: 'conflict',
+                    remoteChange: payload.new,
+                    conflictTime: new Date().toISOString()
+                };
+                updateSyncStatus('error');
+
+                // Notify user of conflict
+                const conflictCount = Object.values(appData.syncStatus || {})
+                    .filter(s => s.status === 'conflict').length;
+                if (conflictCount > 0) {
+                    console.warn(`${conflictCount} sync conflict(s) need resolution`);
+                }
+            } else {
+                // No conflict - can auto-merge
+                if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+                    // Schedule a sync to pull the new data
+                    setTimeout(() => syncFromSupabase(), 1000);
+                }
             }
         }
 
@@ -3072,18 +3528,39 @@
                 return;
             }
 
-            // Only pull from cloud - don't auto-push local data
-            // Push only happens explicitly after CSV imports
+            // First replay any queued operations
+            await replaySyncQueue();
+
+            // Then pull from cloud with merge
             await syncFromSupabase();
         }
 
         // Manual sync button handler
-        function triggerManualSync() {
+        async function triggerManualSync() {
             if (supabaseClient) {
-                fullSync();
+                // Force push local changes first
+                await syncToSupabase();
+                // Then pull and merge
+                await syncFromSupabase();
             } else {
                 alert('Cloud sync is not available. Running in offline mode.');
             }
+        }
+
+        // Get sync status for a specific record
+        function getRecordSyncStatus(table, recordId) {
+            const key = `${table}:${recordId}`;
+            return appData.syncStatus?.[key] || { status: 'unknown' };
+        }
+
+        // Get count of pending/failed sync operations
+        function getPendingSyncCount() {
+            const queue = appData.syncQueue || [];
+            return {
+                pending: queue.filter(i => i.status === 'pending').length,
+                failed: queue.filter(i => i.status === 'failed').length,
+                conflicts: Object.values(appData.syncStatus || {}).filter(s => s.status === 'conflict').length
+            };
         }
 
         function setupEventListeners() {
@@ -3146,6 +3623,46 @@
             showLogin();
         }
 
+        // Login rate limiting
+        const loginRateLimiter = {
+            attempts: 0,
+            lastAttempt: 0,
+            lockoutUntil: 0,
+            MAX_ATTEMPTS: 5,
+            LOCKOUT_DURATION: 60000, // 1 minute
+            ATTEMPT_WINDOW: 300000,  // 5 minutes
+
+            canAttempt() {
+                const now = Date.now();
+                // Check if currently locked out
+                if (now < this.lockoutUntil) {
+                    const remainingSeconds = Math.ceil((this.lockoutUntil - now) / 1000);
+                    return { allowed: false, message: `Too many attempts. Please wait ${remainingSeconds} seconds.` };
+                }
+                // Reset attempts if window expired
+                if (now - this.lastAttempt > this.ATTEMPT_WINDOW) {
+                    this.attempts = 0;
+                }
+                return { allowed: true };
+            },
+
+            recordAttempt(success) {
+                const now = Date.now();
+                this.lastAttempt = now;
+                if (success) {
+                    this.attempts = 0;
+                    this.lockoutUntil = 0;
+                } else {
+                    this.attempts++;
+                    if (this.attempts >= this.MAX_ATTEMPTS) {
+                        // Progressive lockout: doubles each time
+                        const lockoutMultiplier = Math.pow(2, Math.floor(this.attempts / this.MAX_ATTEMPTS) - 1);
+                        this.lockoutUntil = now + (this.LOCKOUT_DURATION * lockoutMultiplier);
+                    }
+                }
+            }
+        };
+
         async function handleLogin(e) {
             e.preventDefault();
             const email = document.getElementById('login-email').value;
@@ -3155,6 +3672,14 @@
 
             if (!email || !password) {
                 errorEl.textContent = 'Please enter email and password.';
+                errorEl.classList.add('show');
+                return;
+            }
+
+            // Check rate limiting
+            const rateLimitCheck = loginRateLimiter.canAttempt();
+            if (!rateLimitCheck.allowed) {
+                errorEl.textContent = rateLimitCheck.message;
                 errorEl.classList.add('show');
                 return;
             }
@@ -3178,6 +3703,9 @@
                 }
 
                 if (data.user) {
+                    // Record successful login
+                    loginRateLimiter.recordAttempt(true);
+
                     const profile = userProfiles[email] || {
                         name: email.split('@')[0],
                         role: 'user',
@@ -3192,8 +3720,24 @@
                     showApp();
                 }
             } catch (error) {
+                // Record failed login
+                loginRateLimiter.recordAttempt(false);
+
                 console.error('Login error:', error);
-                errorEl.textContent = error.message || 'Invalid credentials. Please try again.';
+                // Sanitize error message - don't expose internal details
+                let safeMessage = 'Invalid credentials. Please try again.';
+                if (error.message?.includes('Invalid login')) {
+                    safeMessage = 'Invalid email or password.';
+                } else if (error.message?.includes('Email not confirmed')) {
+                    safeMessage = 'Please verify your email address.';
+                } else if (error.message?.includes('rate')) {
+                    safeMessage = 'Too many attempts. Please try again later.';
+                }
+                // Add attempt warning if getting close to lockout
+                if (loginRateLimiter.attempts >= 3) {
+                    safeMessage += ` (${loginRateLimiter.MAX_ATTEMPTS - loginRateLimiter.attempts} attempts remaining)`;
+                }
+                errorEl.textContent = safeMessage;
                 errorEl.classList.add('show');
             } finally {
                 loginBtn.disabled = false;
@@ -3300,6 +3844,27 @@
             openModal('change-password-modal');
         }
 
+        // Password strength validation
+        function validatePasswordStrength(password) {
+            const errors = [];
+            if (password.length < 8) {
+                errors.push('at least 8 characters');
+            }
+            if (!/[A-Z]/.test(password)) {
+                errors.push('one uppercase letter');
+            }
+            if (!/[a-z]/.test(password)) {
+                errors.push('one lowercase letter');
+            }
+            if (!/[0-9]/.test(password)) {
+                errors.push('one number');
+            }
+            if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+                errors.push('one special character (!@#$%^&*...)');
+            }
+            return errors;
+        }
+
         async function savePassword() {
             const newPassword = document.getElementById('new-password').value;
             const confirmPassword = document.getElementById('confirm-password').value;
@@ -3314,8 +3879,10 @@
                 return;
             }
 
-            if (newPassword.length < 6) {
-                alert('Password must be at least 6 characters.');
+            // Strong password validation
+            const passwordErrors = validatePasswordStrength(newPassword);
+            if (passwordErrors.length > 0) {
+                alert('Password must contain:\n• ' + passwordErrors.join('\n• '));
                 return;
             }
 
@@ -3334,7 +3901,11 @@
                 alert('Password updated successfully!');
             } catch (error) {
                 console.error('Password update error:', error);
-                alert('Failed to update password: ' + error.message);
+                // Sanitize error message - don't expose internal details
+                const safeMessage = error.message?.includes('weak') ?
+                    'Password is too weak. Please choose a stronger password.' :
+                    'Failed to update password. Please try again.';
+                alert(safeMessage);
             }
         }
 
@@ -3400,14 +3971,14 @@
             container.innerHTML = transactions.map(t => `
                 <li class="recent-item">
                     <div class="recent-info">
-                        <div class="recent-avatar">${getInitials(t.customer_name || t.member_email)}</div>
+                        <div class="recent-avatar">${escapeHtml(getInitials(t.customer_name || t.member_email))}</div>
                         <div>
-                            <div class="recent-name">${t.customer_name || t.member_email || 'Unknown'}</div>
-                            <div class="recent-detail">${formatDate(t.transaction_date)} · ${t.stripe_account}</div>
+                            <div class="recent-name">${escapeHtml(t.customer_name || t.member_email || 'Unknown')}</div>
+                            <div class="recent-detail">${escapeHtml(formatDate(t.transaction_date))} · ${escapeHtml(t.stripe_account)}</div>
                         </div>
                     </div>
                     <div class="recent-amount ${t.status === 'succeeded' ? 'positive' : 'negative'}">
-                        ${t.status === 'succeeded' ? '+' : ''}$${formatCurrency(t.amount)}
+                        ${t.status === 'succeeded' ? '+' : ''}$${escapeHtml(formatCurrency(t.amount))}
                     </div>
                 </li>
             `).join('');
@@ -3435,11 +4006,11 @@
                     <div class="recent-info">
                         <div class="recent-avatar" style="background: var(--danger-light); color: var(--danger);">!</div>
                         <div>
-                            <div class="recent-name">${d.member_name || d.member_email || 'Unknown'}</div>
-                            <div class="recent-detail">${formatDiscrepancyType(d.discrepancy_type)}</div>
+                            <div class="recent-name">${escapeHtml(d.member_name || d.member_email || 'Unknown')}</div>
+                            <div class="recent-detail">${escapeHtml(formatDiscrepancyType(d.discrepancy_type))}</div>
                         </div>
                     </div>
-                    <span class="badge badge-danger">${d.priority || 'medium'}</span>
+                    <span class="badge badge-danger">${escapeHtml(d.priority || 'medium')}</span>
                 </li>
             `).join('');
         }
@@ -3486,11 +4057,11 @@
             }
 
             container.innerHTML = alerts.map(a => `
-                <div class="alert alert-${a.type}">
+                <div class="alert alert-${escapeHtml(a.type)}">
                     <div class="alert-icon">${a.type === 'danger' ? '&#9888;' : a.type === 'warning' ? '&#9888;' : '&#128161;'}</div>
                     <div class="alert-content">
-                        <div class="alert-title">${a.title}</div>
-                        <div class="alert-message">${a.message}</div>
+                        <div class="alert-title">${escapeHtml(a.title)}</div>
+                        <div class="alert-message">${escapeHtml(a.message)}</div>
                     </div>
                 </div>
             `).join('');
@@ -3559,14 +4130,14 @@
 
             tbody.innerHTML = members.map(m => `
                 <tr>
-                    <td><strong>${m.name || 'Unknown'}</strong></td>
-                    <td>${m.email || '-'}</td>
-                    <td>${m.subscription_plan || '-'}</td>
-                    <td>$${formatCurrency(m.subscription_amount)}</td>
+                    <td><strong>${escapeHtml(m.name || 'Unknown')}</strong></td>
+                    <td>${escapeHtml(m.email || '-')}</td>
+                    <td>${escapeHtml(m.subscription_plan || '-')}</td>
+                    <td>$${escapeHtml(formatCurrency(m.subscription_amount))}</td>
                     <td>${getStatusBadge(m.subscription_status)}</td>
-                    <td>${m.last_payment_date ? formatDate(m.last_payment_date) : '-'}</td>
+                    <td>${escapeHtml(m.last_payment_date ? formatDate(m.last_payment_date) : '-')}</td>
                     <td>
-                        <button class="btn btn-sm btn-outline" onclick="viewMember('${m.id}')">View</button>
+                        <button class="btn btn-sm btn-outline" data-member-id="${escapeHtml(m.id || m.email)}" onclick="viewMember(this.dataset.memberId)">View</button>
                     </td>
                 </tr>
             `).join('');
@@ -3638,10 +4209,10 @@
                     const statusClass = p.status === 'succeeded' ? 'success' : p.status === 'failed' ? 'danger' : 'warning';
                     return `
                         <tr>
-                            <td>${formatDate(p.transaction_date || p.date)}</td>
-                            <td>$${formatCurrency(p.amount)}</td>
-                            <td><span class="badge badge-${statusClass}">${p.status || 'unknown'}</span></td>
-                            <td>${p.stripe_account || p.account || '--'}</td>
+                            <td>${escapeHtml(formatDate(p.transaction_date || p.date))}</td>
+                            <td>$${escapeHtml(formatCurrency(p.amount))}</td>
+                            <td><span class="badge badge-${escapeHtml(statusClass)}">${escapeHtml(p.status || 'unknown')}</span></td>
+                            <td>${escapeHtml(p.stripe_account || p.account || '--')}</td>
                         </tr>
                     `;
                 }).join('');
@@ -3662,7 +4233,7 @@
             const member = appData.members.find(m => m.id === memberId || m.email === memberId);
             if (member) {
                 member.notes = notes;
-                saveToLocalStorage();
+                saveToLocalStorage(true);  // Sync member notes to cloud
                 alert('Notes saved!');
             }
         }
@@ -4029,7 +4600,7 @@
 
             // Clear old discrepancies and add new ones
             appData.discrepancies = discrepancies;
-            saveToLocalStorage();
+            saveToLocalStorage(true);  // Sync discrepancies to cloud
 
             refreshDashboard();
             renderDiscrepanciesTable();
@@ -4083,15 +4654,15 @@
             tbody.innerHTML = pageItems.map(d => `
                 <tr>
                     <td>
-                        <strong>${d.member_name || 'Unknown'}</strong><br>
-                        <span class="text-muted" style="font-size: 0.75rem;">${d.member_email || '-'}</span>
+                        <strong>${escapeHtml(d.member_name || 'Unknown')}</strong><br>
+                        <span class="text-muted" style="font-size: 0.75rem;">${escapeHtml(d.member_email || '-')}</span>
                     </td>
-                    <td>${formatDiscrepancyType(d.discrepancy_type)}</td>
-                    <td>$${formatCurrency(d.expected_amount)}</td>
-                    <td>$${formatCurrency(d.actual_amount)}</td>
-                    <td><span class="badge badge-${d.priority === 'high' ? 'danger' : d.priority === 'medium' ? 'warning' : 'info'}">${d.priority}</span></td>
+                    <td>${escapeHtml(formatDiscrepancyType(d.discrepancy_type))}</td>
+                    <td>$${escapeHtml(formatCurrency(d.expected_amount))}</td>
+                    <td>$${escapeHtml(formatCurrency(d.actual_amount))}</td>
+                    <td><span class="badge badge-${d.priority === 'high' ? 'danger' : d.priority === 'medium' ? 'warning' : 'info'}">${escapeHtml(d.priority)}</span></td>
                     <td>
-                        <button class="btn btn-sm btn-outline" onclick="resolveDiscrepancy('${d.id}')">Resolve</button>
+                        <button class="btn btn-sm btn-outline" data-discrepancy-id="${escapeHtml(d.id)}" onclick="resolveDiscrepancy(this.dataset.discrepancyId)">Resolve</button>
                     </td>
                 </tr>
             `).join('');
@@ -4150,7 +4721,7 @@
                 discrepancy.status = 'resolved';
                 discrepancy.resolved_at = new Date().toISOString();
                 discrepancy.resolved_by = currentUser.name;
-                saveToLocalStorage();
+                saveToLocalStorage(true);  // Sync resolved discrepancy to cloud
                 renderDiscrepanciesTable();
                 refreshDashboard();
             }
@@ -4473,13 +5044,13 @@
             tbody.innerHTML = memberTotals.map(m => `
                 <tr>
                     <td>
-                        <strong>${m.name || m.fullName || 'Unknown'}</strong><br>
-                        <span class="text-muted" style="font-size: 0.75rem;">${m.email}</span>
+                        <strong>${escapeHtml(m.name || m.fullName || 'Unknown')}</strong><br>
+                        <span class="text-muted" style="font-size: 0.75rem;">${escapeHtml(m.email)}</span>
                     </td>
-                    <td>${m.subscription_plan || m.plan || m.offerName || 'Standard'}</td>
-                    <td class="text-success"><strong>$${formatCurrency(m.totalPaid)}</strong></td>
-                    <td>${m.paymentCount} payments</td>
-                    <td>${formatDate(m.join_date || m.joinDate || m.createdAt)}</td>
+                    <td>${escapeHtml(m.subscription_plan || m.plan || m.offerName || 'Standard')}</td>
+                    <td class="text-success"><strong>$${escapeHtml(formatCurrency(m.totalPaid))}</strong></td>
+                    <td>${escapeHtml(m.paymentCount)} payments</td>
+                    <td>${escapeHtml(formatDate(m.join_date || m.joinDate || m.createdAt))}</td>
                 </tr>
             `).join('');
         }
@@ -4871,7 +5442,7 @@
                 imported_at: new Date().toISOString()
             });
 
-            saveToLocalStorage();
+            saveToLocalStorage(true);  // Sync Chase bank transactions to cloud
             refreshBookkeeping();
 
             if (imported === 0 && data.length > 0) {
@@ -5082,17 +5653,17 @@
 
                 return `
                     <tr>
-                        <td>${formatDate(txn.date)}</td>
-                        <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${txn.description}">${txn.description}</td>
+                        <td>${escapeHtml(formatDate(txn.date))}</td>
+                        <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(txn.description)}">${escapeHtml(txn.description)}</td>
                         <td>
-                            <span class="badge" style="background: ${category.color}20; color: ${category.color}; border: 1px solid ${category.color}40;">
-                                ${category.name}
+                            <span class="badge" style="background: ${escapeHtml(category.color)}20; color: ${escapeHtml(category.color)}; border: 1px solid ${escapeHtml(category.color)}40;">
+                                ${escapeHtml(category.name)}
                             </span>
                         </td>
                         <td class="${txn.type === 'deposit' ? 'positive' : 'negative'}">
-                            ${txn.type === 'deposit' ? '+' : '-'}$${formatCurrency(txn.amount)}
+                            ${txn.type === 'deposit' ? '+' : '-'}$${escapeHtml(formatCurrency(txn.amount))}
                         </td>
-                        <td>${txn.balance ? '$' + formatCurrency(txn.balance) : '-'}</td>
+                        <td>${txn.balance ? '$' + escapeHtml(formatCurrency(txn.balance)) : '-'}</td>
                         <td>
                             ${txn.is_matched
                                 ? '<span class="badge badge-success">Matched</span>'
@@ -5101,7 +5672,7 @@
                                     : '-'}
                         </td>
                         <td>
-                            <button class="btn btn-sm btn-outline" onclick="openEditCategoryModal('${txn.id}')">Edit</button>
+                            <button class="btn btn-sm btn-outline" data-txn-id="${escapeHtml(txn.id)}" onclick="openEditCategoryModal(this.dataset.txnId)">Edit</button>
                         </td>
                     </tr>
                 `;
@@ -5133,12 +5704,12 @@
                             return `
                                 <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--gray-100);">
                                     <div style="display: flex; align-items: center; gap: 0.5rem;">
-                                        <span style="width: 12px; height: 12px; border-radius: 3px; background: ${category.color};"></span>
-                                        <span>${category.name}</span>
+                                        <span style="width: 12px; height: 12px; border-radius: 3px; background: ${escapeHtml(category.color)};"></span>
+                                        <span>${escapeHtml(category.name)}</span>
                                     </div>
                                     <div style="text-align: right;">
-                                        <div style="font-weight: 600; color: var(--success);">$${formatCurrency(amount)}</div>
-                                        <div style="font-size: 0.75rem; color: var(--gray-500);">${percent}%</div>
+                                        <div style="font-weight: 600; color: var(--success);">$${escapeHtml(formatCurrency(amount))}</div>
+                                        <div style="font-size: 0.75rem; color: var(--gray-500);">${escapeHtml(percent)}%</div>
                                     </div>
                                 </div>
                             `;
@@ -5160,12 +5731,12 @@
                             return `
                                 <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--gray-100);">
                                     <div style="display: flex; align-items: center; gap: 0.5rem;">
-                                        <span style="width: 12px; height: 12px; border-radius: 3px; background: ${category.color};"></span>
-                                        <span>${category.name}</span>
+                                        <span style="width: 12px; height: 12px; border-radius: 3px; background: ${escapeHtml(category.color)};"></span>
+                                        <span>${escapeHtml(category.name)}</span>
                                     </div>
                                     <div style="text-align: right;">
-                                        <div style="font-weight: 600; color: var(--danger);">$${formatCurrency(amount)}</div>
-                                        <div style="font-size: 0.75rem; color: var(--gray-500);">${percent}%</div>
+                                        <div style="font-weight: 600; color: var(--danger);">$${escapeHtml(formatCurrency(amount))}</div>
+                                        <div style="font-size: 0.75rem; color: var(--gray-500);">${escapeHtml(percent)}%</div>
                                     </div>
                                 </div>
                             `;
@@ -5260,7 +5831,7 @@
                 }
             }
 
-            saveToLocalStorage();
+            saveToLocalStorage(true);  // Sync category changes to cloud
             closeModal('edit-category-modal');
             refreshBookkeeping();
         }
@@ -5296,7 +5867,7 @@
             appData.bankTransactions.push(transaction);
             appData.bankTransactions.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-            saveToLocalStorage();
+            saveToLocalStorage(true);  // Sync manual transaction to cloud
             closeModal('add-transaction-modal');
 
             // Reset form
@@ -5383,7 +5954,7 @@
 
             // Store matches
             appData.stripePayoutMatches = matches;
-            saveToLocalStorage();
+            saveToLocalStorage(true);  // Sync payout matches to cloud
 
             // Render match table
             renderPayoutMatchTable(matches);
@@ -5409,11 +5980,11 @@
 
             tbody.innerHTML = matches.map(m => `
                 <tr>
-                    <td>${m.stripe_date ? formatDate(m.stripe_date) : '-'}</td>
-                    <td>${m.stripe_amount ? '$' + formatCurrency(m.stripe_amount) : '-'}</td>
-                    <td>${formatDate(m.chase_date)}</td>
-                    <td>$${formatCurrency(m.chase_amount)}</td>
-                    <td>${m.difference !== null ? '$' + m.difference.toFixed(2) : '-'}</td>
+                    <td>${escapeHtml(m.stripe_date ? formatDate(m.stripe_date) : '-')}</td>
+                    <td>${m.stripe_amount ? '$' + escapeHtml(formatCurrency(m.stripe_amount)) : '-'}</td>
+                    <td>${escapeHtml(formatDate(m.chase_date))}</td>
+                    <td>$${escapeHtml(formatCurrency(m.chase_amount))}</td>
+                    <td>${m.difference !== null ? '$' + escapeHtml(m.difference.toFixed(2)) : '-'}</td>
                     <td>
                         <span class="badge ${m.status === 'matched' ? 'badge-success' : 'badge-warning'}">
                             ${m.status === 'matched' ? 'Matched' : 'Unmatched'}
@@ -5470,10 +6041,10 @@
                 ${incomeCategories.map(c => `
                     <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem; background: var(--gray-50); border-radius: var(--radius-sm); margin-bottom: 0.25rem;">
                         <div style="display: flex; align-items: center; gap: 0.5rem;">
-                            <span style="width: 16px; height: 16px; border-radius: 3px; background: ${c.color};"></span>
-                            <span>${c.name}</span>
+                            <span style="width: 16px; height: 16px; border-radius: 3px; background: ${escapeHtml(c.color)};"></span>
+                            <span>${escapeHtml(c.name)}</span>
                         </div>
-                        ${c.id.startsWith('cat_') ? '' : `<button class="btn btn-sm btn-danger" onclick="deleteCategory('${c.id}')" style="padding: 0.25rem 0.5rem;">&times;</button>`}
+                        ${c.id.startsWith('cat_') ? '' : `<button class="btn btn-sm btn-danger" data-cat-id="${escapeHtml(c.id)}" onclick="deleteCategory(this.dataset.catId)" style="padding: 0.25rem 0.5rem;">&times;</button>`}
                     </div>
                 `).join('')}
 
@@ -5481,10 +6052,10 @@
                 ${expenseCategories.map(c => `
                     <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem; background: var(--gray-50); border-radius: var(--radius-sm); margin-bottom: 0.25rem;">
                         <div style="display: flex; align-items: center; gap: 0.5rem;">
-                            <span style="width: 16px; height: 16px; border-radius: 3px; background: ${c.color};"></span>
-                            <span>${c.name}</span>
+                            <span style="width: 16px; height: 16px; border-radius: 3px; background: ${escapeHtml(c.color)};"></span>
+                            <span>${escapeHtml(c.name)}</span>
                         </div>
-                        ${c.id.startsWith('cat_') ? '' : `<button class="btn btn-sm btn-danger" onclick="deleteCategory('${c.id}')" style="padding: 0.25rem 0.5rem;">&times;</button>`}
+                        ${c.id.startsWith('cat_') ? '' : `<button class="btn btn-sm btn-danger" data-cat-id="${escapeHtml(c.id)}" onclick="deleteCategory(this.dataset.catId)" style="padding: 0.25rem 0.5rem;">&times;</button>`}
                     </div>
                 `).join('')}
             `;
@@ -5508,7 +6079,7 @@
             };
 
             appData.expenseCategories.push(newCategory);
-            saveToLocalStorage();
+            saveToLocalStorage(true);  // Sync new category to cloud
 
             document.getElementById('new-cat-name').value = '';
             renderCategoriesList();
@@ -5526,7 +6097,7 @@
                     }
                 });
 
-                saveToLocalStorage();
+                saveToLocalStorage(true);  // Sync category deletion to cloud
                 renderCategoriesList();
                 populateCategoryDropdowns();
                 refreshBookkeeping();
@@ -5561,11 +6132,11 @@
                 return `
                     <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem; background: var(--gray-50); border-radius: var(--radius-sm); margin-bottom: 0.25rem;">
                         <div>
-                            <strong style="font-family: monospace;">${keyword}</strong>
+                            <strong style="font-family: monospace;">${escapeHtml(keyword)}</strong>
                             <span style="color: var(--gray-400); margin: 0 0.5rem;">→</span>
-                            <span class="badge" style="background: ${category.color}20; color: ${category.color};">${category.name}</span>
+                            <span class="badge" style="background: ${escapeHtml(category.color)}20; color: ${escapeHtml(category.color)};">${escapeHtml(category.name)}</span>
                         </div>
-                        <button class="btn btn-sm btn-outline" onclick="deleteVendorMapping('${keyword}')" style="padding: 0.25rem 0.5rem;">&times;</button>
+                        <button class="btn btn-sm btn-outline" data-keyword="${escapeHtml(keyword)}" onclick="deleteVendorMapping(this.dataset.keyword)" style="padding: 0.25rem 0.5rem;">&times;</button>
                     </div>
                 `;
             }).join('');
@@ -5581,7 +6152,7 @@
             }
 
             appData.vendorMappings[keyword] = categoryId;
-            saveToLocalStorage();
+            saveToLocalStorage(true);  // Sync vendor mapping to cloud
 
             document.getElementById('new-vendor-keyword').value = '';
             document.getElementById('new-vendor-category').value = '';
@@ -5590,14 +6161,14 @@
 
         function deleteVendorMapping(keyword) {
             delete appData.vendorMappings[keyword];
-            saveToLocalStorage();
+            saveToLocalStorage(true);  // Sync vendor mapping deletion to cloud
             renderVendorMappingsList();
         }
 
         function resetVendorMappings() {
             if (confirm('Reset all vendor mappings to defaults? Custom mappings will be lost.')) {
                 appData.vendorMappings = getDefaultVendorMappings();
-                saveToLocalStorage();
+                saveToLocalStorage(true);  // Sync vendor mappings reset to cloud
                 renderVendorMappingsList();
             }
         }
@@ -5646,6 +6217,39 @@
             report += `Profit Margin:            ${plData.margin}%\n`;
 
             downloadFile(report, `pl-report-${period}.txt`, 'text/plain');
+        }
+
+        // ============================================
+        // SECURITY UTILITY FUNCTIONS
+        // ============================================
+
+        /**
+         * Escapes HTML special characters to prevent XSS attacks
+         * Use this for any user-controlled data inserted into HTML
+         */
+        function escapeHtml(text) {
+            if (text === null || text === undefined) return '';
+            const str = String(text);
+            const htmlEscapes = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;',
+                '/': '&#x2F;',
+                '`': '&#x60;',
+                '=': '&#x3D;'
+            };
+            return str.replace(/[&<>"'`=\/]/g, char => htmlEscapes[char]);
+        }
+
+        /**
+         * Escapes data for safe use in HTML attributes
+         * Use this for onclick handlers and other attribute values
+         */
+        function escapeAttr(text) {
+            if (text === null || text === undefined) return '';
+            return String(text).replace(/['"\\]/g, '\\$&');
         }
 
         // ============================================
