@@ -1598,7 +1598,7 @@
                                     <th>Name</th>
                                     <th>Email</th>
                                     <th>Plan</th>
-                                    <th>Amount</th>
+                                    <th>Total Paid</th>
                                     <th>Status</th>
                                     <th>Last Payment</th>
                                     <th>Actions</th>
@@ -4204,7 +4204,7 @@
                     <td><strong>${escapeHtml(m.name || 'Unknown')}</strong></td>
                     <td>${escapeHtml(m.email || '-')}</td>
                     <td>${escapeHtml(m.subscription_plan || '-')}</td>
-                    <td>$${escapeHtml(formatCurrency(m.subscription_amount))}</td>
+                    <td>$${formatCurrency(m.total_paid || 0)}</td>
                     <td>${getStatusBadge(m.subscription_status)}</td>
                     <td>${escapeHtml(m.last_payment_date ? formatDate(m.last_payment_date) : '-')}</td>
                     <td>
