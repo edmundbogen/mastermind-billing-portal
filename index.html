@@ -2878,36 +2878,24 @@
                 if (membersError) {
                     console.warn('Failed to fetch members:', membersError);
                 } else if (members && members.length > 0) {
-                    // Merge with local data - Supabase takes precedence
-                    const memberMap = new Map();
-
-                    // Add local members first
-                    appData.members.forEach(m => {
-                        if (m.email) memberMap.set(m.email.toLowerCase(), m);
-                    });
-
-                    // Override/add with Supabase members
-                    members.forEach(m => {
-                        memberMap.set(m.email.toLowerCase(), {
-                            id: m.id,
-                            email: m.email,
-                            name: m.name,
-                            fullName: m.name,
-                            kajabiId: m.kajabi_id,
-                            plan: m.subscription_plan,
-                            offerName: m.subscription_plan,
-                            amount: m.subscription_amount,
-                            billingFrequency: m.billing_frequency,
-                            status: m.subscription_status,
-                            joinDate: m.join_date,
-                            createdAt: m.created_at,
-                            lastPaymentDate: m.last_payment_date,
-                            totalPaid: m.total_paid,
-                            notes: m.notes
-                        });
-                    });
-
-                    appData.members = Array.from(memberMap.values());
+                    // Use Supabase as source of truth - replace local data
+                    appData.members = members.map(m => ({
+                        id: m.id,
+                        email: m.email,
+                        name: m.name,
+                        fullName: m.name,
+                        kajabiId: m.kajabi_id,
+                        plan: m.subscription_plan,
+                        offerName: m.subscription_plan,
+                        amount: m.subscription_amount,
+                        billingFrequency: m.billing_frequency,
+                        status: m.subscription_status,
+                        joinDate: m.join_date,
+                        createdAt: m.created_at,
+                        lastPaymentDate: m.last_payment_date,
+                        totalPaid: m.total_paid,
+                        notes: m.notes
+                    }));
                 }
 
                 // Fetch stripe transactions
@@ -2919,35 +2907,25 @@
                 if (txnError) {
                     console.warn('Failed to fetch transactions:', txnError);
                 } else if (transactions && transactions.length > 0) {
-                    const txnMap = new Map();
-
-                    appData.stripeTransactions.forEach(t => {
-                        const key = t.id || t.stripeId;
-                        if (key) txnMap.set(key, t);
-                    });
-
-                    transactions.forEach(t => {
-                        txnMap.set(t.stripe_id, {
-                            id: t.stripe_id,
-                            stripeId: t.stripe_id,
-                            account: t.stripe_account,
-                            stripeAccount: t.stripe_account,
-                            email: t.member_email,
-                            customerEmail: t.member_email,
-                            name: t.customer_name,
-                            customerName: t.customer_name,
-                            amount: t.amount,
-                            fee: t.fee,
-                            netAmount: t.net_amount,
-                            status: t.status,
-                            date: t.transaction_date,
-                            created: t.transaction_date,
-                            description: t.description,
-                            productName: t.product_name
-                        });
-                    });
-
-                    appData.stripeTransactions = Array.from(txnMap.values());
+                    // Use Supabase as source of truth - replace local data
+                    appData.stripeTransactions = transactions.map(t => ({
+                        id: t.stripe_id,
+                        stripeId: t.stripe_id,
+                        account: t.stripe_account,
+                        stripeAccount: t.stripe_account,
+                        email: t.member_email,
+                        customerEmail: t.member_email,
+                        name: t.customer_name,
+                        customerName: t.customer_name,
+                        amount: t.amount,
+                        fee: t.fee,
+                        netAmount: t.net_amount,
+                        status: t.status,
+                        date: t.transaction_date,
+                        created: t.transaction_date,
+                        description: t.description,
+                        productName: t.product_name
+                    }));
                 }
 
                 // Fetch discrepancies
