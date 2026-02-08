@@ -3830,7 +3830,13 @@
 
             // Update header with user info
             document.getElementById('user-display-name').textContent = currentUser.name;
-            document.getElementById('user-role').textContent = currentUser.role === 'admin' ? 'Admin' : 'Full Admin';
+            // Map role values to display labels
+            const roleLabels = {
+                'admin': 'Admin',
+                'full_admin': 'Full Admin',
+                'user': 'User'
+            };
+            document.getElementById('user-role').textContent = roleLabels[currentUser.role] || currentUser.role || 'User';
             document.getElementById('user-avatar').textContent = currentUser.initials;
 
             // Show/hide admin-only sections
