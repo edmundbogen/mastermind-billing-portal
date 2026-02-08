@@ -1995,30 +1995,23 @@
                 </div>
 
                 <!-- User Management (Admin Only) -->
-                <div class="settings-section" id="user-management-section">
-                    <h3 class="settings-title">User Management</h3>
+                <div class="settings-section">
+                    <h3 class="settings-title">Your Account</h3>
                     <div class="card">
                         <div class="card-body">
                             <div class="user-card">
                                 <div class="user-card-info">
-                                    <div class="user-card-avatar">EB</div>
+                                    <div class="user-card-avatar" id="settings-user-avatar">--</div>
                                     <div>
-                                        <div class="user-card-name">Edmund Bogen</div>
-                                        <div class="user-card-role">Admin</div>
+                                        <div class="user-card-name" id="settings-user-name">Loading...</div>
+                                        <div class="user-card-role" id="settings-user-role">-</div>
                                     </div>
                                 </div>
-                                <button class="btn btn-sm btn-outline" onclick="openChangePasswordModal('edmund')">Change Password</button>
+                                <button class="btn btn-sm btn-outline" onclick="openChangePasswordModal()">Change Your Password</button>
                             </div>
-                            <div class="user-card">
-                                <div class="user-card-info">
-                                    <div class="user-card-avatar">EY</div>
-                                    <div>
-                                        <div class="user-card-name">Eytan</div>
-                                        <div class="user-card-role">Full Admin</div>
-                                    </div>
-                                </div>
-                                <button class="btn btn-sm btn-outline" onclick="openChangePasswordModal('eytan')">Change Password</button>
-                            </div>
+                            <p class="text-muted" style="font-size: 0.75rem; margin-top: 0.75rem;">
+                                Note: Each user can only change their own password. To reset another user's password, use the Supabase dashboard.
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -3875,7 +3868,23 @@
                 refreshReports();
             } else if (tabName === 'reconciliation') {
                 renderDiscrepanciesTable();
+            } else if (tabName === 'settings') {
+                refreshSettingsUserInfo();
             }
+        }
+
+        function refreshSettingsUserInfo() {
+            if (!currentUser) return;
+
+            const roleLabels = {
+                'admin': 'Admin',
+                'full_admin': 'Full Admin',
+                'user': 'User'
+            };
+
+            document.getElementById('settings-user-avatar').textContent = currentUser.initials || '--';
+            document.getElementById('settings-user-name').textContent = currentUser.name || 'Unknown';
+            document.getElementById('settings-user-role').textContent = roleLabels[currentUser.role] || currentUser.role || 'User';
         }
 
         // ============================================
