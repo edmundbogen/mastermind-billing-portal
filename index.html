@@ -3088,8 +3088,9 @@
             if (!localRecord) return { merged: remoteRecord, hadConflict: false };
             if (!remoteRecord) return { merged: localRecord, hadConflict: false };
 
-            const localTime = new Date(localRecord.updated_at || localRecord.createdAt || 0).getTime();
-            const remoteTime = new Date(remoteRecord.updated_at || remoteRecord.created_at || 0).getTime();
+            // Check both camelCase and snake_case for timestamp fields (app uses both conventions)
+            const localTime = new Date(localRecord.updated_at || localRecord.updatedAt || localRecord.created_at || localRecord.createdAt || 0).getTime();
+            const remoteTime = new Date(remoteRecord.updated_at || remoteRecord.updatedAt || remoteRecord.created_at || remoteRecord.createdAt || 0).getTime();
 
             // Check for conflict (both modified since last sync)
             const lastSyncTime = syncManager.lastSyncTime ? syncManager.lastSyncTime.getTime() : 0;
