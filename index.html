@@ -5923,15 +5923,18 @@
             const incomeCategories = categories.filter(c => c.type === 'income');
             const expenseCategories = categories.filter(c => c.type === 'expense');
 
+            // Helper to generate escaped option HTML (prevents XSS from custom category names)
+            const categoryToOption = c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`;
+
             // Transaction filter dropdown
             const filterSelect = document.getElementById('txn-category-filter');
             if (filterSelect) {
                 filterSelect.innerHTML = '<option value="">All Categories</option>' +
                     '<optgroup label="Income">' +
-                    incomeCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('') +
+                    incomeCategories.map(categoryToOption).join('') +
                     '</optgroup>' +
                     '<optgroup label="Expenses">' +
-                    expenseCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('') +
+                    expenseCategories.map(categoryToOption).join('') +
                     '</optgroup>';
             }
 
@@ -5940,10 +5943,10 @@
             if (newTxnSelect) {
                 newTxnSelect.innerHTML = '<option value="">Select category...</option>' +
                     '<optgroup label="Income">' +
-                    incomeCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('') +
+                    incomeCategories.map(categoryToOption).join('') +
                     '</optgroup>' +
                     '<optgroup label="Expenses">' +
-                    expenseCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('') +
+                    expenseCategories.map(categoryToOption).join('') +
                     '</optgroup>';
             }
 
@@ -5952,10 +5955,10 @@
             if (editCatSelect) {
                 editCatSelect.innerHTML = '<option value="">Select category...</option>' +
                     '<optgroup label="Income">' +
-                    incomeCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('') +
+                    incomeCategories.map(categoryToOption).join('') +
                     '</optgroup>' +
                     '<optgroup label="Expenses">' +
-                    expenseCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('') +
+                    expenseCategories.map(categoryToOption).join('') +
                     '</optgroup>';
             }
 
@@ -5964,10 +5967,10 @@
             if (vendorCatSelect) {
                 vendorCatSelect.innerHTML = '<option value="">Select category...</option>' +
                     '<optgroup label="Income">' +
-                    incomeCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('') +
+                    incomeCategories.map(categoryToOption).join('') +
                     '</optgroup>' +
                     '<optgroup label="Expenses">' +
-                    expenseCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('') +
+                    expenseCategories.map(categoryToOption).join('') +
                     '</optgroup>';
             }
         }
