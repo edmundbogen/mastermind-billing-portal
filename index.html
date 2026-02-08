@@ -2584,11 +2584,15 @@
         // INITIALIZATION
         // ============================================
 
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', async function() {
             loadFromLocalStorage();
-            initSupabase();
-            checkAuth();
             setupEventListeners();
+            await initSupabase();
+            await checkAuth();
+            // Refresh data display after auth
+            if (currentUser) {
+                refreshDashboard();
+            }
         });
 
         async function initSupabase() {
