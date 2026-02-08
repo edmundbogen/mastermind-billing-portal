@@ -1,32 +1,18 @@
 -- Mastermind Billing Portal - Supabase Database Schema
 -- Run this in your Supabase SQL Editor to set up the database
-
--- ============================================
--- USERS TABLE
--- ============================================
-CREATE TABLE IF NOT EXISTS billing_users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    username TEXT UNIQUE NOT NULL,
-    name TEXT NOT NULL,
-    password_hash TEXT NOT NULL,
-    role TEXT CHECK (role IN ('admin', 'full_admin')) NOT NULL DEFAULT 'full_admin',
-    last_login TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Seed initial users (passwords will be set via the portal)
--- Default password: 'changeme' - CHANGE IMMEDIATELY after first login
-INSERT INTO billing_users (username, name, password_hash, role) VALUES
-    ('edmund', 'Edmund Bogen', 'changeme', 'admin'),
-    ('eytan', 'Eytan', 'changeme', 'full_admin')
-ON CONFLICT (username) DO NOTHING;
+--
+-- NOTE: This schema uses TEXT primary keys to match the app's ID generation
+-- (e.g., 'id_abc123xyz', 'chase_2024-01-15_VENDOR_100')
+--
+-- IMPORTANT: This app uses Supabase Auth for authentication, NOT the
+-- billing_users table. Create users via Authentication > Users in the
+-- Supabase dashboard.
 
 -- ============================================
 -- MEMBERS TABLE (from Kajabi)
 -- ============================================
 CREATE TABLE IF NOT EXISTS members (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
     kajabi_id TEXT,
@@ -52,17 +38,17 @@ CREATE INDEX IF NOT EXISTS idx_members_status ON members(subscription_status);
 -- STRIPE TRANSACTIONS TABLE
 -- ============================================
 CREATE TABLE IF NOT EXISTS stripe_transactions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY,
     stripe_id TEXT UNIQUE,
     stripe_account TEXT CHECK (stripe_account IN ('reignation', 'coaching')) NOT NULL,
-    member_id UUID REFERENCES members(id) ON DELETE SET NULL,
+    member_id TEXT REFERENCES members(id) ON DELETE SET NULL,
     member_email TEXT,
     customer_name TEXT,
     amount DECIMAL(10,2) NOT NULL,
     fee DECIMAL(10,2) DEFAULT 0,
     net_amount DECIMAL(10,2),
     currency TEXT DEFAULT 'usd',
-    status TEXT CHECK (status IN ('succeeded', 'failed', 'pending', 'refunded', 'disputed')) DEFAULT 'succeeded',
+    status TEXT CHECK (status IN ('succeeded', 'failed', 'pending', 'refunded', 'disputed', 'canceled')) DEFAULT 'succeeded',
     failure_reason TEXT,
     transaction_date TIMESTAMPTZ NOT NULL,
     description TEXT,
@@ -75,31 +61,31 @@ CREATE INDEX IF NOT EXISTS idx_stripe_member_email ON stripe_transactions(member
 CREATE INDEX IF NOT EXISTS idx_stripe_date ON stripe_transactions(transaction_date);
 CREATE INDEX IF NOT EXISTS idx_stripe_account ON stripe_transactions(stripe_account);
 CREATE INDEX IF NOT EXISTS idx_stripe_status ON stripe_transactions(status);
+CREATE INDEX IF NOT EXISTS idx_stripe_stripe_id ON stripe_transactions(stripe_id);
 
 -- ============================================
--- KAJABI TRANSACTIONS TABLE
+-- EXPENSE CATEGORIES TABLE
+-- (Created before bank_transactions due to foreign key)
 -- ============================================
-CREATE TABLE IF NOT EXISTS kajabi_transactions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    kajabi_id TEXT,
-    member_id UUID REFERENCES members(id) ON DELETE SET NULL,
-    member_email TEXT,
-    amount DECIMAL(10,2) NOT NULL,
-    transaction_date TIMESTAMPTZ NOT NULL,
-    product_name TEXT,
-    offer_name TEXT,
-    status TEXT CHECK (status IN ('paid', 'refunded', 'failed', 'pending')) DEFAULT 'paid',
+CREATE TABLE IF NOT EXISTS expense_categories (
+    id TEXT PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    type TEXT CHECK (type IN ('income', 'expense')) NOT NULL,
+    parent_category TEXT,
+    color TEXT DEFAULT '#6c757d',
+    icon TEXT,
+    is_tax_deductible BOOLEAN DEFAULT FALSE,
+    tax_category TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    sort_order INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
-
-CREATE INDEX IF NOT EXISTS idx_kajabi_member_email ON kajabi_transactions(member_email);
-CREATE INDEX IF NOT EXISTS idx_kajabi_date ON kajabi_transactions(transaction_date);
 
 -- ============================================
 -- BANK STATEMENTS TABLE
 -- ============================================
 CREATE TABLE IF NOT EXISTS bank_statements (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY,
     account_name TEXT NOT NULL,
     account_type TEXT CHECK (account_type IN ('checking', 'savings', 'credit_card')) DEFAULT 'checking',
     statement_month DATE NOT NULL,
@@ -121,15 +107,15 @@ CREATE INDEX IF NOT EXISTS idx_statements_account ON bank_statements(account_nam
 -- BANK/CC TRANSACTIONS TABLE
 -- ============================================
 CREATE TABLE IF NOT EXISTS bank_transactions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    statement_id UUID REFERENCES bank_statements(id) ON DELETE CASCADE,
+    id TEXT PRIMARY KEY,
+    statement_id TEXT REFERENCES bank_statements(id) ON DELETE CASCADE,
     transaction_date DATE NOT NULL,
     post_date DATE,
     description TEXT NOT NULL,
     original_description TEXT,
     amount DECIMAL(12,2) NOT NULL,
-    transaction_type TEXT CHECK (transaction_type IN ('income', 'expense', 'transfer')) DEFAULT 'expense',
-    category_id UUID REFERENCES expense_categories(id) ON DELETE SET NULL,
+    transaction_type TEXT CHECK (transaction_type IN ('deposit', 'withdrawal', 'transfer')) DEFAULT 'withdrawal',
+    category_id TEXT REFERENCES expense_categories(id) ON DELETE SET NULL,
     is_reconciled BOOLEAN DEFAULT FALSE,
     reconciled_with_stripe TEXT,
     is_tax_deductible BOOLEAN DEFAULT FALSE,
@@ -142,76 +128,11 @@ CREATE INDEX IF NOT EXISTS idx_bank_txn_category ON bank_transactions(category_i
 CREATE INDEX IF NOT EXISTS idx_bank_txn_type ON bank_transactions(transaction_type);
 
 -- ============================================
--- EXPENSE CATEGORIES TABLE
--- ============================================
-CREATE TABLE IF NOT EXISTS expense_categories (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name TEXT UNIQUE NOT NULL,
-    category_type TEXT CHECK (category_type IN ('income', 'expense')) NOT NULL,
-    parent_category TEXT,
-    color TEXT DEFAULT '#6c757d',
-    icon TEXT,
-    is_tax_deductible BOOLEAN DEFAULT FALSE,
-    tax_category TEXT,
-    is_active BOOLEAN DEFAULT TRUE,
-    sort_order INTEGER DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Seed default expense categories
-INSERT INTO expense_categories (name, category_type, color, is_tax_deductible, sort_order) VALUES
-    -- Income categories
-    ('Mastermind Subscriptions', 'income', '#28a745', false, 1),
-    ('Coaching Revenue', 'income', '#00a8e1', false, 2),
-    ('Speaking Fees', 'income', '#6f42c1', false, 3),
-    ('Affiliate Income', 'income', '#20c997', false, 4),
-    ('Other Income', 'income', '#17a2b8', false, 5),
-
-    -- Expense categories
-    ('Kajabi Platform', 'expense', '#dc3545', true, 10),
-    ('AI Tools (Claude/ChatGPT)', 'expense', '#fd7e14', true, 11),
-    ('Software Subscriptions', 'expense', '#007bff', true, 12),
-    ('Contractors/VA', 'expense', '#e83e8c', true, 13),
-    ('Marketing & Ads', 'expense', '#ffc107', true, 14),
-    ('Travel & Events', 'expense', '#17a2b8', true, 15),
-    ('Professional Services', 'expense', '#6c757d', true, 16),
-    ('Office & Equipment', 'expense', '#343a40', true, 17),
-    ('Bank & Processing Fees', 'expense', '#adb5bd', false, 18),
-    ('Refunds Issued', 'expense', '#dc3545', false, 19),
-    ('Meals & Entertainment', 'expense', '#fd7e14', true, 20),
-    ('Education & Training', 'expense', '#6f42c1', true, 21),
-    ('Insurance', 'expense', '#20c997', true, 22),
-    ('Other Expenses', 'expense', '#6c757d', false, 99)
-ON CONFLICT (name) DO NOTHING;
-
--- ============================================
--- DOCUMENTS TABLE (receipts, invoices)
--- ============================================
-CREATE TABLE IF NOT EXISTS documents (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name TEXT NOT NULL,
-    file_path TEXT NOT NULL,
-    file_type TEXT,
-    file_size INTEGER,
-    document_type TEXT CHECK (document_type IN ('invoice', 'receipt', 'statement', 'contract', 'tax_document', 'other')) DEFAULT 'receipt',
-    related_transaction_id UUID,
-    related_member_id UUID REFERENCES members(id) ON DELETE SET NULL,
-    description TEXT,
-    document_date DATE,
-    amount DECIMAL(12,2),
-    uploaded_by TEXT,
-    uploaded_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_documents_type ON documents(document_type);
-CREATE INDEX IF NOT EXISTS idx_documents_date ON documents(document_date);
-
--- ============================================
 -- BILLING DISCREPANCIES TABLE
 -- ============================================
 CREATE TABLE IF NOT EXISTS billing_discrepancies (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    member_id UUID REFERENCES members(id) ON DELETE CASCADE,
+    id TEXT PRIMARY KEY,
+    member_id TEXT REFERENCES members(id) ON DELETE CASCADE,
     member_email TEXT,
     member_name TEXT,
     discrepancy_type TEXT CHECK (discrepancy_type IN (
@@ -246,15 +167,8 @@ CREATE INDEX IF NOT EXISTS idx_discrepancies_member ON billing_discrepancies(mem
 -- IMPORT LOGS TABLE (audit trail)
 -- ============================================
 CREATE TABLE IF NOT EXISTS import_logs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    import_type TEXT CHECK (import_type IN (
-        'kajabi_members',
-        'kajabi_transactions',
-        'stripe_reignation',
-        'stripe_coaching',
-        'bank_statement',
-        'credit_card_statement'
-    )) NOT NULL,
+    id TEXT PRIMARY KEY,
+    import_type TEXT NOT NULL,
     file_name TEXT,
     records_total INTEGER DEFAULT 0,
     records_imported INTEGER DEFAULT 0,
@@ -271,7 +185,7 @@ CREATE INDEX IF NOT EXISTS idx_import_logs_type ON import_logs(import_type);
 CREATE INDEX IF NOT EXISTS idx_import_logs_date ON import_logs(imported_at);
 
 -- ============================================
--- SETTINGS TABLE (app configuration)
+-- APP SETTINGS TABLE (configuration)
 -- ============================================
 CREATE TABLE IF NOT EXISTS app_settings (
     key TEXT PRIMARY KEY,
@@ -279,40 +193,6 @@ CREATE TABLE IF NOT EXISTS app_settings (
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     updated_by TEXT
 );
-
--- Default settings
-INSERT INTO app_settings (key, value) VALUES
-    ('csv_mappings', '{
-        "kajabi": {
-            "email": "Email",
-            "name": "Full Name",
-            "plan": "Offer Name",
-            "amount": "Amount",
-            "status": "Subscription Status",
-            "date": "Created At"
-        },
-        "stripe": {
-            "id": "id",
-            "email": "Customer Email",
-            "name": "Customer Name",
-            "amount": "Amount",
-            "fee": "Fee",
-            "status": "Status",
-            "date": "Created (UTC)",
-            "description": "Description"
-        }
-    }'::jsonb),
-    ('notification_settings', '{
-        "email_on_failed_payment": false,
-        "weekly_summary": false,
-        "alert_threshold": 100
-    }'::jsonb),
-    ('business_info', '{
-        "name": "Edmund''s Mastermind",
-        "monthly_target": 50000,
-        "member_target": 100
-    }'::jsonb)
-ON CONFLICT (key) DO NOTHING;
 
 -- ============================================
 -- HELPER FUNCTIONS
@@ -327,31 +207,11 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- Apply to tables that need it
-DROP TRIGGER IF EXISTS update_billing_users_updated_at ON billing_users;
-CREATE TRIGGER update_billing_users_updated_at
-    BEFORE UPDATE ON billing_users
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
+-- Apply to members table
 DROP TRIGGER IF EXISTS update_members_updated_at ON members;
 CREATE TRIGGER update_members_updated_at
     BEFORE UPDATE ON members
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
--- Function to calculate member total paid
-CREATE OR REPLACE FUNCTION calculate_member_total_paid(member_email_param TEXT)
-RETURNS DECIMAL AS $$
-DECLARE
-    total DECIMAL;
-BEGIN
-    SELECT COALESCE(SUM(amount), 0) INTO total
-    FROM stripe_transactions
-    WHERE member_email = member_email_param
-    AND status = 'succeeded';
-
-    RETURN total;
-END;
-$$ LANGUAGE plpgsql;
 
 -- ============================================
 -- VIEWS FOR REPORTING
@@ -382,57 +242,86 @@ SELECT
 FROM members
 GROUP BY subscription_status;
 
--- Open discrepancies view
-CREATE OR REPLACE VIEW open_discrepancies AS
-SELECT
-    d.id,
-    d.member_id,
-    d.member_email,
-    d.member_name,
-    d.discrepancy_type,
-    d.expected_amount,
-    d.actual_amount,
-    d.difference,
-    d.period_start,
-    d.period_end,
-    d.stripe_account,
-    d.related_stripe_id,
-    d.status,
-    d.priority,
-    d.resolution_notes,
-    d.resolved_by,
-    d.created_at,
-    d.resolved_at,
-    m.subscription_plan,
-    m.subscription_amount
-FROM billing_discrepancies d
-LEFT JOIN members m ON d.member_id = m.id
-WHERE d.status IN ('open', 'investigating')
-ORDER BY
-    CASE d.priority
-        WHEN 'critical' THEN 1
-        WHEN 'high' THEN 2
-        WHEN 'medium' THEN 3
-        ELSE 4
-    END,
-    d.created_at DESC;
+-- ============================================
+-- ROW LEVEL SECURITY
+-- Enable RLS and create policies for authenticated users
+-- ============================================
+
+ALTER TABLE members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE stripe_transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bank_transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bank_statements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE billing_discrepancies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE import_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE expense_categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
+
+-- Policies: Authenticated users can access all data
+CREATE POLICY "Authenticated users can read members" ON members
+    FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "Authenticated users can insert members" ON members
+    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "Authenticated users can update members" ON members
+    FOR UPDATE USING (auth.role() = 'authenticated');
+CREATE POLICY "Authenticated users can delete members" ON members
+    FOR DELETE USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Authenticated users can read stripe_transactions" ON stripe_transactions
+    FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "Authenticated users can insert stripe_transactions" ON stripe_transactions
+    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "Authenticated users can update stripe_transactions" ON stripe_transactions
+    FOR UPDATE USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Authenticated users can read bank_transactions" ON bank_transactions
+    FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "Authenticated users can insert bank_transactions" ON bank_transactions
+    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "Authenticated users can update bank_transactions" ON bank_transactions
+    FOR UPDATE USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Authenticated users can read bank_statements" ON bank_statements
+    FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "Authenticated users can insert bank_statements" ON bank_statements
+    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+
+CREATE POLICY "Authenticated users can read billing_discrepancies" ON billing_discrepancies
+    FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "Authenticated users can insert billing_discrepancies" ON billing_discrepancies
+    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "Authenticated users can update billing_discrepancies" ON billing_discrepancies
+    FOR UPDATE USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Authenticated users can read import_logs" ON import_logs
+    FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "Authenticated users can insert import_logs" ON import_logs
+    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+
+CREATE POLICY "Authenticated users can read expense_categories" ON expense_categories
+    FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "Authenticated users can insert expense_categories" ON expense_categories
+    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "Authenticated users can update expense_categories" ON expense_categories
+    FOR UPDATE USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Authenticated users can read app_settings" ON app_settings
+    FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "Authenticated users can update app_settings" ON app_settings
+    FOR UPDATE USING (auth.role() = 'authenticated');
 
 -- ============================================
--- ROW LEVEL SECURITY (Optional - enable if using Supabase Auth)
+-- NOTES
 -- ============================================
--- Uncomment these if you want to use Supabase's built-in auth instead of custom auth
-
--- ALTER TABLE billing_users ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE members ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE stripe_transactions ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE bank_transactions ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
-
--- CREATE POLICY "Authenticated users can access all data" ON members
---     FOR ALL USING (auth.role() = 'authenticated');
-
--- ============================================
--- GRANTS (if needed for specific roles)
--- ============================================
--- GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
--- GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+--
+-- 1. This schema uses TEXT primary keys, not UUIDs, because the app
+--    generates its own string IDs (e.g., 'id_abc123', 'chase_2024-01-15_...')
+--
+-- 2. Authentication is handled by Supabase Auth, not a custom table.
+--    Create users in the Supabase dashboard under Authentication > Users.
+--
+-- 3. RLS is enabled with policies allowing all authenticated users
+--    full access. Adjust policies if you need role-based restrictions.
+--
+-- 4. The app uses 'email' as the merge key for members, and 'stripe_id'
+--    for transactions, to handle upserts correctly.
+--
