@@ -3987,6 +3987,7 @@
             // Failed payments this month
             const thisMonth = new Date();
             thisMonth.setDate(1);
+            thisMonth.setHours(0, 0, 0, 0); // Start of month at midnight
             const failedPayments = appData.stripeTransactions.filter(t =>
                 t.status === 'failed' &&
                 new Date(t.transaction_date) >= thisMonth
@@ -4146,6 +4147,7 @@
             // Calculate canceled this month
             const thisMonth = new Date();
             thisMonth.setDate(1);
+            thisMonth.setHours(0, 0, 0, 0); // Start of month at midnight
             const canceledThisMonth = members.filter(m =>
                 m.subscription_status === 'canceled' &&
                 m.updated_at && new Date(m.updated_at) >= thisMonth
