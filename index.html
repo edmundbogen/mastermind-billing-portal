@@ -1342,20 +1342,19 @@
                 <h2>Sign In</h2>
                 <form id="login-form">
                     <div class="form-group">
-                        <label for="login-user">User</label>
-                        <select id="login-user">
-                            <option value="">Select user...</option>
-                            <option value="edmund">Edmund Bogen</option>
-                            <option value="eytan">Eytan</option>
-                        </select>
+                        <label for="login-email">Email</label>
+                        <input type="email" id="login-email" placeholder="Enter your email" required>
                     </div>
                     <div class="form-group">
                         <label for="login-password">Password</label>
-                        <input type="password" id="login-password" placeholder="Enter password">
+                        <input type="password" id="login-password" placeholder="Enter password" required>
                     </div>
                     <div class="login-error" id="login-error">Invalid credentials. Please try again.</div>
-                    <button type="submit" class="btn btn-primary btn-block">Sign In</button>
+                    <button type="submit" class="btn btn-primary btn-block" id="login-btn">Sign In</button>
                 </form>
+                <div style="margin-top: 1rem; text-align: center; font-size: 0.8rem; color: #64748b;">
+                    Secure login powered by Supabase
+                </div>
             </div>
         </div>
     </div>
@@ -1678,7 +1677,7 @@
             <div class="page-content" id="page-bookkeeping">
                 <!-- Hero Image -->
                 <div class="bookkeeping-hero">
-                    <img src="edmund-books.png" alt="Edmund's Bookkeeping">
+                    <img src="edmund-books-web.jpg" alt="Edmund's Bookkeeping">
                     <div class="bookkeeping-hero-overlay">
                         <div class="bookkeeping-hero-text">Edmund's Books</div>
                         <div class="bookkeeping-hero-subtext">Stay calm. Stay organized.</div>
@@ -2456,18 +2455,16 @@
         let supabaseClient = null;
         let syncStatus = 'offline';
 
-        // User credentials
-        let users = {
-            edmund: {
+        // User profiles (keyed by email - no passwords stored in code)
+        const userProfiles = {
+            'edmund@edmundbogen.com': {
                 name: 'Edmund Bogen',
                 role: 'admin',
-                password: 'StanleyBogen1!',
                 initials: 'EB'
             },
-            eytan: {
+            'eytan@bogen.ai': {
                 name: 'Eytan',
                 role: 'full_admin',
-                password: 'Eytanisgay1!',
                 initials: 'EY'
             }
         };
@@ -2664,7 +2661,7 @@
         }
 
         function saveToLocalStorage() {
-            localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+            // User auth is handled by Supabase Auth - only save app data
             localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(appData));
             // Trigger cloud sync after saving locally
             if (supabaseClient && syncStatus === 'online') {
@@ -2686,22 +2683,7 @@
             updateSyncStatus('syncing');
 
             try {
-                // Sync users/passwords
-                for (const [username, userData] of Object.entries(users)) {
-                    const userRecord = {
-                        username: username,
-                        name: userData.name,
-                        password_hash: userData.password,
-                        role: userData.role,
-                        updated_at: new Date().toISOString()
-                    };
-
-                    const { error } = await supabaseClient
-                        .from('billing_users')
-                        .upsert(userRecord, { onConflict: 'username' });
-
-                    if (error) console.warn('User sync error:', error);
-                }
+                // User auth is handled by Supabase Auth - no separate user sync needed
 
                 // Sync members
                 if (appData.members && appData.members.length > 0) {
@@ -2881,24 +2863,7 @@
             updateSyncStatus('syncing');
 
             try {
-                // Fetch users/passwords from Supabase
-                const { data: cloudUsers, error: usersError } = await supabaseClient
-                    .from('billing_users')
-                    .select('*');
-
-                if (usersError) {
-                    console.warn('Failed to fetch users:', usersError);
-                } else if (cloudUsers && cloudUsers.length > 0) {
-                    cloudUsers.forEach(u => {
-                        users[u.username] = {
-                            name: u.name,
-                            role: u.role,
-                            password: u.password_hash,
-                            initials: u.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
-                        };
-                    });
-                    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
-                }
+                // User auth is now handled by Supabase Auth (no separate user table sync needed)
 
                 // Fetch members from Supabase
                 const { data: members, error: membersError } = await supabaseClient
@@ -3160,50 +3125,84 @@
         // AUTHENTICATION
         // ============================================
 
-        function checkAuth() {
-            const session = localStorage.getItem(STORAGE_KEYS.SESSION);
-            if (session) {
-                const { username, expires } = JSON.parse(session);
-                if (new Date() < new Date(expires) && users[username]) {
-                    currentUser = { ...users[username], username };
-                    showApp();
-                    return;
+        async function checkAuth() {
+            // Check for existing Supabase session
+            if (supabaseClient) {
+                try {
+                    const { data: { session }, error } = await supabaseClient.auth.getSession();
+                    if (session && session.user) {
+                        const email = session.user.email;
+                        const profile = userProfiles[email] || {
+                            name: email.split('@')[0],
+                            role: 'user',
+                            initials: email.substring(0, 2).toUpperCase()
+                        };
+                        currentUser = { ...profile, email };
+                        showApp();
+                        return;
+                    }
+                } catch (e) {
+                    console.warn('Auth check failed:', e);
                 }
             }
             showLogin();
         }
 
-        function handleLogin(e) {
+        async function handleLogin(e) {
             e.preventDefault();
-            const username = document.getElementById('login-user').value;
+            const email = document.getElementById('login-email').value;
             const password = document.getElementById('login-password').value;
             const errorEl = document.getElementById('login-error');
+            const loginBtn = document.getElementById('login-btn');
 
-            if (!username) {
-                errorEl.textContent = 'Please select a user.';
+            if (!email || !password) {
+                errorEl.textContent = 'Please enter email and password.';
                 errorEl.classList.add('show');
                 return;
             }
 
-            if (users[username] && users[username].password === password) {
-                // Create session (7 day expiry)
-                const session = {
-                    username: username,
-                    expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-                };
-                localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(session));
+            // Disable button during login
+            loginBtn.disabled = true;
+            loginBtn.textContent = 'Signing in...';
 
-                currentUser = { ...users[username], username };
-                errorEl.classList.remove('show');
-                showApp();
-            } else {
-                errorEl.textContent = 'Invalid password. Please try again.';
+            try {
+                if (!supabaseClient) {
+                    throw new Error('Authentication service unavailable. Please refresh the page.');
+                }
+
+                const { data, error } = await supabaseClient.auth.signInWithPassword({
+                    email: email,
+                    password: password
+                });
+
+                if (error) {
+                    throw error;
+                }
+
+                if (data.user) {
+                    const profile = userProfiles[email] || {
+                        name: email.split('@')[0],
+                        role: 'user',
+                        initials: email.substring(0, 2).toUpperCase()
+                    };
+                    currentUser = { ...profile, email };
+                    errorEl.classList.remove('show');
+                    showApp();
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                errorEl.textContent = error.message || 'Invalid credentials. Please try again.';
                 errorEl.classList.add('show');
+            } finally {
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Sign In';
             }
         }
 
-        function logout() {
-            localStorage.removeItem(STORAGE_KEYS.SESSION);
+        async function logout() {
+            if (supabaseClient) {
+                await supabaseClient.auth.signOut();
+            }
             currentUser = null;
             showLogin();
         }
@@ -3212,7 +3211,7 @@
             document.getElementById('login-screen').classList.remove('hidden');
             document.getElementById('main-app').classList.remove('active');
             document.getElementById('login-password').value = '';
-            document.getElementById('login-user').value = '';
+            document.getElementById('login-email').value = '';
         }
 
         function showApp() {
@@ -3288,17 +3287,18 @@
             document.getElementById(modalId).classList.remove('active');
         }
 
-        let passwordChangeTarget = null;
-
-        function openChangePasswordModal(username) {
-            passwordChangeTarget = username;
-            document.getElementById('change-password-user').textContent = users[username].name;
+        function openChangePasswordModal() {
+            if (!currentUser) {
+                alert('You must be logged in to change your password.');
+                return;
+            }
+            document.getElementById('change-password-user').textContent = currentUser.name;
             document.getElementById('new-password').value = '';
             document.getElementById('confirm-password').value = '';
             openModal('change-password-modal');
         }
 
-        function savePassword() {
+        async function savePassword() {
             const newPassword = document.getElementById('new-password').value;
             const confirmPassword = document.getElementById('confirm-password').value;
 
@@ -3317,12 +3317,23 @@
                 return;
             }
 
-            // Update password
-            users[passwordChangeTarget].password = newPassword;
-            saveToLocalStorage();
+            try {
+                if (!supabaseClient) {
+                    throw new Error('Authentication service unavailable.');
+                }
 
-            closeModal('change-password-modal');
-            alert(`Password updated for ${users[passwordChangeTarget].name}`);
+                const { error } = await supabaseClient.auth.updateUser({
+                    password: newPassword
+                });
+
+                if (error) throw error;
+
+                closeModal('change-password-modal');
+                alert('Password updated successfully!');
+            } catch (error) {
+                console.error('Password update error:', error);
+                alert('Failed to update password: ' + error.message);
+            }
         }
 
         // ============================================
