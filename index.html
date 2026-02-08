@@ -3322,6 +3322,25 @@
                     supabaseClient.from('bank_transactions').select('*').order('transaction_date', { ascending: false })
                 ]);
 
+                // Track errors from each table query
+                const syncErrors = [];
+                if (membersRes.error) {
+                    console.error('Members sync error:', membersRes.error);
+                    syncErrors.push({ table: 'members', error: membersRes.error.message });
+                }
+                if (txnsRes.error) {
+                    console.error('Stripe transactions sync error:', txnsRes.error);
+                    syncErrors.push({ table: 'stripe_transactions', error: txnsRes.error.message });
+                }
+                if (discRes.error) {
+                    console.error('Discrepancies sync error:', discRes.error);
+                    syncErrors.push({ table: 'billing_discrepancies', error: discRes.error.message });
+                }
+                if (bankTxnsRes.error) {
+                    console.error('Bank transactions sync error:', bankTxnsRes.error);
+                    syncErrors.push({ table: 'bank_transactions', error: bankTxnsRes.error.message });
+                }
+
                 // Process members with merge
                 if (!membersRes.error && membersRes.data) {
                     const remoteMembers = membersRes.data.map(m => ({
@@ -3465,9 +3484,17 @@
                 saveToLocalStorage(false);
 
                 syncManager.lastSyncTime = new Date();
-                syncStatus = 'online';
-                updateSyncStatus();
-                console.log('Sync from Supabase completed:', syncManager.lastSyncTime);
+
+                // Set status based on whether any table queries failed
+                if (syncErrors.length > 0) {
+                    console.warn(`Sync completed with ${syncErrors.length} table error(s):`, syncErrors);
+                    syncStatus = 'error';
+                    updateSyncStatus();
+                } else {
+                    syncStatus = 'online';
+                    updateSyncStatus();
+                    console.log('Sync from Supabase completed successfully:', syncManager.lastSyncTime);
+                }
 
                 // Refresh UI
                 if (typeof refreshMembersTable === 'function') refreshMembersTable();
