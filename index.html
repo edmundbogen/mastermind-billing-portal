@@ -3373,6 +3373,22 @@
         // REALTIME SUBSCRIPTIONS FOR CONFLICT DETECTION
         // ============================================
 
+        // Debounce timer for realtime-triggered syncs
+        let realtimeSyncTimer = null;
+        const REALTIME_SYNC_DEBOUNCE_MS = 2000; // Wait 2 seconds after last change before syncing
+
+        function debouncedSyncFromSupabase() {
+            // Clear any pending sync
+            if (realtimeSyncTimer) {
+                clearTimeout(realtimeSyncTimer);
+            }
+            // Schedule new sync after debounce period
+            realtimeSyncTimer = setTimeout(() => {
+                realtimeSyncTimer = null;
+                syncFromSupabase();
+            }, REALTIME_SYNC_DEBOUNCE_MS);
+        }
+
         async function setupRealtimeSubscriptions() {
             if (!supabaseClient) return;
 
@@ -3439,8 +3455,9 @@
             } else {
                 // No conflict - can auto-merge
                 if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-                    // Schedule a sync to pull the new data
-                    setTimeout(() => syncFromSupabase(), 1000);
+                    // Schedule a debounced sync to pull the new data
+                    // This prevents sync storms when multiple rapid changes occur
+                    debouncedSyncFromSupabase();
                 }
             }
         }
