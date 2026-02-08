@@ -2855,6 +2855,56 @@
             }
         }
 
+        // Show a brief notification toast for sync status
+        function showSyncNotification(message, isError = false) {
+            // Remove any existing notification
+            const existing = document.getElementById('sync-notification');
+            if (existing) existing.remove();
+
+            const notification = document.createElement('div');
+            notification.id = 'sync-notification';
+            notification.style.cssText = `
+                position: fixed;
+                bottom: 20px;
+                right: 20px;
+                padding: 12px 20px;
+                background: ${isError ? 'var(--danger)' : 'var(--success)'};
+                color: white;
+                border-radius: var(--radius-md);
+                box-shadow: var(--shadow-lg);
+                font-size: 0.875rem;
+                font-weight: 500;
+                z-index: 9999;
+                animation: slideIn 0.3s ease;
+            `;
+            notification.textContent = message;
+
+            // Add animation keyframes if not already present
+            if (!document.getElementById('sync-notification-styles')) {
+                const style = document.createElement('style');
+                style.id = 'sync-notification-styles';
+                style.textContent = `
+                    @keyframes slideIn {
+                        from { transform: translateX(100%); opacity: 0; }
+                        to { transform: translateX(0); opacity: 1; }
+                    }
+                    @keyframes slideOut {
+                        from { transform: translateX(0); opacity: 1; }
+                        to { transform: translateX(100%); opacity: 0; }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+
+            document.body.appendChild(notification);
+
+            // Auto-remove after 3 seconds
+            setTimeout(() => {
+                notification.style.animation = 'slideOut 0.3s ease';
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+
         function loadFromLocalStorage() {
             // Load app data
             const storedData = localStorage.getItem(STORAGE_KEYS.DATA);
@@ -3045,6 +3095,8 @@
             lastSyncTime: null,
             isOnline: navigator.onLine,
             realtimeSubscriptions: [],
+            autoSyncInterval: null,
+            AUTO_SYNC_INTERVAL_MS: 2 * 60 * 1000, // 2 minutes
 
             // Acquire sync lock with queuing
             async acquireLock() {
@@ -3071,6 +3123,30 @@
             // Check if we can sync
             canSync() {
                 return supabaseClient && this.isOnline && !this._syncLock;
+            },
+
+            // Start automatic sync interval
+            startAutoSync() {
+                if (this.autoSyncInterval) {
+                    clearInterval(this.autoSyncInterval);
+                }
+                this.autoSyncInterval = setInterval(async () => {
+                    if (this.canSync() && currentUser) {
+                        console.log('Auto-sync triggered');
+                        await syncToSupabase();
+                        await syncFromSupabase();
+                    }
+                }, this.AUTO_SYNC_INTERVAL_MS);
+                console.log('Auto-sync started (every 2 minutes)');
+            },
+
+            // Stop automatic sync
+            stopAutoSync() {
+                if (this.autoSyncInterval) {
+                    clearInterval(this.autoSyncInterval);
+                    this.autoSyncInterval = null;
+                    console.log('Auto-sync stopped');
+                }
             }
         };
 
@@ -3834,6 +3910,9 @@
         }
 
         async function logout() {
+            // Stop auto-sync before logging out
+            syncManager.stopAutoSync();
+
             if (supabaseClient) {
                 await supabaseClient.auth.signOut();
             }
@@ -3875,6 +3954,22 @@
 
             // Refresh dashboard
             refreshDashboard();
+
+            // Start automatic sync and do initial sync
+            syncManager.startAutoSync();
+
+            // Immediate sync on login: push local changes, then pull remote data
+            if (supabaseClient && syncManager.isOnline) {
+                console.log('Performing initial sync after login...');
+                syncToSupabase().then(() => {
+                    return syncFromSupabase();
+                }).then(() => {
+                    console.log('Initial sync complete');
+                    showSyncNotification('Data synced with cloud');
+                }).catch(err => {
+                    console.error('Initial sync failed:', err);
+                });
+            }
         }
 
         // ============================================
