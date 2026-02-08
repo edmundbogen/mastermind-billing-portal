@@ -2664,11 +2664,11 @@
             }
         }
 
-        function saveToLocalStorage() {
+        function saveToLocalStorage(pushToCloud = false) {
             // User auth is handled by Supabase Auth - only save app data
             localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(appData));
-            // Trigger cloud sync after saving locally
-            if (supabaseClient && syncStatus === 'online') {
+            // Only sync to cloud when explicitly requested (after CSV imports)
+            if (pushToCloud && supabaseClient && syncStatus === 'online') {
                 syncToSupabase();
             }
         }
@@ -3072,9 +3072,9 @@
                 return;
             }
 
-            // Pull from cloud first, then push local changes
+            // Only pull from cloud - don't auto-push local data
+            // Push only happens explicitly after CSV imports
             await syncFromSupabase();
-            await syncToSupabase();
         }
 
         // Manual sync button handler
@@ -3764,7 +3764,7 @@
                 imported_at: new Date().toISOString()
             });
 
-            saveToLocalStorage();
+            saveToLocalStorage(true);  // Push to Supabase after import
             refreshMembersTable();
             refreshDashboard();
 
@@ -3920,7 +3920,7 @@
                 imported_at: new Date().toISOString()
             });
 
-            saveToLocalStorage();
+            saveToLocalStorage(true);  // Push to Supabase after import
             refreshDashboard();
 
             const lastImportId = account === 'reignation' ? 'stripe1-last-import' : 'stripe2-last-import';
@@ -4757,7 +4757,7 @@
                 imported_at: new Date().toISOString()
             });
 
-            saveToLocalStorage();
+            saveToLocalStorage(true);  // Push to Supabase after import
             refreshBookkeeping();
 
             alert(`Chase PDF import complete!\n\nImported: ${imported}\nSkipped (duplicates): ${skipped}`);
