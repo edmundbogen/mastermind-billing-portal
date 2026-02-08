@@ -2885,22 +2885,6 @@
             }
         }
 
-        // Helper to track and queue a specific record change
-        function trackRecordChange(table, data, operation = 'upsert') {
-            if (!syncManager.isOnline) {
-                // Queue for later sync
-                queueSyncOperation({ type: operation, table, data });
-            }
-
-            // Update per-record sync status
-            const recordKey = `${table}:${data.id || data.email}`;
-            if (!appData.syncStatus) appData.syncStatus = {};
-            appData.syncStatus[recordKey] = {
-                status: syncManager.isOnline ? 'pending' : 'queued',
-                lastModified: new Date().toISOString()
-            };
-        }
-
         // ============================================
         // ADVANCED SYNC SYSTEM
         // ============================================
@@ -2945,133 +2929,15 @@
         // Initialize online/offline detection
         window.addEventListener('online', async () => {
             syncManager.isOnline = true;
-            updateSyncStatus('syncing');
-            console.log('Back online - replaying sync queue');
-            await replaySyncQueue();
+            console.log('Back online - triggering full sync');
+            await fullSync();
         });
 
         window.addEventListener('offline', () => {
             syncManager.isOnline = false;
             updateSyncStatus('offline');
-            console.log('Gone offline - changes will be queued');
+            console.log('Gone offline - local changes saved to localStorage');
         });
-
-        // ============================================
-        // SYNC QUEUE FOR OFFLINE CHANGES
-        // ============================================
-
-        function queueSyncOperation(operation) {
-            if (!appData.syncQueue) appData.syncQueue = [];
-
-            const queueItem = {
-                id: generateId(),
-                operation: operation.type, // 'upsert', 'delete'
-                table: operation.table,
-                data: operation.data,
-                timestamp: new Date().toISOString(),
-                retryCount: 0,
-                status: 'pending' // 'pending', 'syncing', 'failed', 'completed'
-            };
-
-            appData.syncQueue.push(queueItem);
-
-            // Update per-record sync status
-            const recordKey = `${operation.table}:${operation.data.id || operation.data.email}`;
-            if (!appData.syncStatus) appData.syncStatus = {};
-            appData.syncStatus[recordKey] = {
-                status: 'pending',
-                lastAttempt: null,
-                queueId: queueItem.id
-            };
-
-            // Save queue to localStorage
-            try {
-                localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(appData));
-            } catch (e) {
-                console.error('Failed to save sync queue:', e);
-            }
-
-            return queueItem.id;
-        }
-
-        async function replaySyncQueue() {
-            if (!supabaseClient || !syncManager.isOnline) return;
-            if (!appData.syncQueue || appData.syncQueue.length === 0) {
-                updateSyncStatus('online');
-                return;
-            }
-
-            await syncManager.acquireLock();
-            updateSyncStatus('syncing');
-
-            try {
-                const pendingItems = appData.syncQueue.filter(item =>
-                    item.status === 'pending' || item.status === 'failed'
-                );
-
-                console.log(`Replaying ${pendingItems.length} queued sync operations`);
-
-                for (const item of pendingItems) {
-                    item.status = 'syncing';
-                    item.retryCount++;
-
-                    try {
-                        if (item.operation === 'upsert') {
-                            const { error } = await supabaseClient
-                                .from(item.table)
-                                .upsert(item.data, { onConflict: item.data.id ? 'id' : 'email' });
-
-                            if (error) throw error;
-                        } else if (item.operation === 'delete') {
-                            const { error } = await supabaseClient
-                                .from(item.table)
-                                .delete()
-                                .eq('id', item.data.id);
-
-                            if (error) throw error;
-                        }
-
-                        item.status = 'completed';
-
-                        // Update per-record status
-                        const recordKey = `${item.table}:${item.data.id || item.data.email}`;
-                        if (appData.syncStatus[recordKey]) {
-                            appData.syncStatus[recordKey].status = 'synced';
-                            appData.syncStatus[recordKey].lastSync = new Date().toISOString();
-                        }
-
-                    } catch (error) {
-                        console.warn(`Sync failed for ${item.table}:`, error);
-                        item.status = item.retryCount >= 3 ? 'failed' : 'pending';
-
-                        const recordKey = `${item.table}:${item.data.id || item.data.email}`;
-                        if (appData.syncStatus[recordKey]) {
-                            appData.syncStatus[recordKey].status = 'failed';
-                            appData.syncStatus[recordKey].lastError = error.message;
-                        }
-                    }
-                }
-
-                // Clean up completed items older than 1 hour
-                const oneHourAgo = Date.now() - 3600000;
-                appData.syncQueue = appData.syncQueue.filter(item =>
-                    item.status !== 'completed' ||
-                    new Date(item.timestamp).getTime() > oneHourAgo
-                );
-
-                saveToLocalStorage(false); // Don't trigger another sync
-
-                const failedCount = appData.syncQueue.filter(i => i.status === 'failed').length;
-                if (failedCount > 0) {
-                    updateSyncStatus('error');
-                } else {
-                    updateSyncStatus('online');
-                }
-
-            } finally {
-                syncManager.releaseLock();
-            }
-        }
 
         // ============================================
         // TIMESTAMP-BASED MERGE LOGIC
