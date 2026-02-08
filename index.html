@@ -429,6 +429,26 @@
             border-color: transparent;
         }
 
+        .backup-btn {
+            background: var(--success);
+            border: none;
+            color: var(--white);
+            padding: 0.5rem 1rem;
+            border-radius: var(--radius-md);
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .backup-btn:hover {
+            background: #047857;
+        }
+
         /* Navigation */
         .main-nav {
             display: flex;
@@ -1380,6 +1400,14 @@
                     <span class="header-title">Billing Portal</span>
                 </div>
                 <div class="header-right">
+                    <button class="backup-btn" onclick="exportAllData()" title="Download full backup">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        Backup
+                    </button>
                     <div class="sync-status" onclick="triggerManualSync()" style="cursor: pointer;" title="Click to sync now">
                         <span class="sync-dot" id="sync-dot"></span>
                         <span id="sync-text">Synced</span>
@@ -4223,6 +4251,9 @@
                 return;
             }
 
+            // Auto-backup before import
+            autoBackupBeforeImport();
+
             Papa.parse(file, {
                 header: true,
                 skipEmptyLines: true,
@@ -4348,6 +4379,9 @@
                 alert('Please select a CSV file.');
                 return;
             }
+
+            // Auto-backup before import
+            autoBackupBeforeImport();
 
             Papa.parse(file, {
                 header: true,
@@ -5051,8 +5085,17 @@
         }
 
         function exportAllData() {
+            const timestamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
             const data = JSON.stringify(appData, null, 2);
-            downloadFile(data, 'mastermind-billing-backup.json', 'application/json');
+            downloadFile(data, `mastermind-backup-${timestamp}.json`, 'application/json');
+        }
+
+        // Auto-backup before imports (silent - no alert)
+        function autoBackupBeforeImport() {
+            const timestamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+            const data = JSON.stringify(appData, null, 2);
+            downloadFile(data, `mastermind-auto-backup-${timestamp}.json`, 'application/json');
+            console.log('Auto-backup saved before import:', `mastermind-auto-backup-${timestamp}.json`);
         }
 
         function importBackupFile() {
@@ -5069,6 +5112,9 @@
                 alert('Please confirm that you understand this will replace all current data.');
                 return;
             }
+
+            // Auto-backup before restoring (safety net in case wrong backup is imported)
+            autoBackupBeforeImport();
 
             const reader = new FileReader();
             reader.onload = function(e) {
@@ -5175,6 +5221,9 @@
                 alert('Please select a file.');
                 return;
             }
+
+            // Auto-backup before import
+            autoBackupBeforeImport();
 
             const fileName = file.name.toLowerCase();
 
