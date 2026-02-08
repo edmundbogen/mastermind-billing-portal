@@ -274,6 +274,22 @@
             width: 100%;
         }
 
+        /* Observer mode - hide editor-only elements */
+        body.observer-mode .editor-only {
+            display: none !important;
+        }
+
+        .observer-badge {
+            background: var(--info-light);
+            color: var(--info);
+            padding: 0.25rem 0.5rem;
+            border-radius: var(--radius-sm);
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
         /* ============================================
            MAIN APP LAYOUT
            ============================================ */
@@ -1538,8 +1554,8 @@
                         <p class="page-subtitle">Manage your mastermind members and subscriptions</p>
                     </div>
                     <div class="quick-actions">
-                        <button class="btn btn-warning" onclick="detectDuplicates(); renderDuplicatesPanel();" title="Scan for duplicate members">Find Duplicates</button>
-                        <button class="btn btn-primary" onclick="openModal('import-kajabi-modal')">Import Kajabi CSV</button>
+                        <button class="btn btn-warning editor-only" onclick="detectDuplicates(); renderDuplicatesPanel();" title="Scan for duplicate members">Find Duplicates</button>
+                        <button class="btn btn-primary editor-only" onclick="openModal('import-kajabi-modal')">Import Kajabi CSV</button>
                         <button class="btn btn-secondary" onclick="exportMembers()">Export</button>
                     </div>
                 </div>
@@ -1573,7 +1589,7 @@
                     <div class="card-body">
                         <p class="text-muted mb-2" style="font-size: 0.875rem;">These members may be duplicates. Review and merge as needed.</p>
                         <div id="duplicates-list" style="max-height: 300px; overflow-y: auto;"></div>
-                        <button class="btn btn-sm btn-outline" onclick="clearResolvedDuplicates()" style="margin-top: 0.75rem;">Clear Resolved</button>
+                        <button class="btn btn-sm btn-outline editor-only" onclick="clearResolvedDuplicates()" style="margin-top: 0.75rem;">Clear Resolved</button>
                     </div>
                 </div>
 
@@ -1740,8 +1756,8 @@
                         <p class="page-subtitle">Track expenses, income, and generate financial reports</p>
                     </div>
                     <div class="quick-actions">
-                        <button class="btn btn-primary" onclick="openModal('add-transaction-modal')">Add Transaction</button>
-                        <button class="btn btn-secondary" onclick="openModal('import-chase-modal')">Import Chase Statement</button>
+                        <button class="btn btn-primary editor-only" onclick="openModal('add-transaction-modal')">Add Transaction</button>
+                        <button class="btn btn-secondary editor-only" onclick="openModal('import-chase-modal')">Import Chase Statement</button>
                     </div>
                 </div>
 
@@ -2072,8 +2088,8 @@
                     <div class="card">
                         <div class="card-body">
                             <p class="text-muted mb-2">Manage expense categories for bookkeeping and vendor auto-categorization.</p>
-                            <button class="btn btn-secondary btn-sm" onclick="openModal('manage-categories-modal')">Manage Categories</button>
-                            <button class="btn btn-outline btn-sm" onclick="openModal('vendor-mappings-modal')" style="margin-left: 0.5rem;">Vendor Mappings</button>
+                            <button class="btn btn-secondary btn-sm editor-only" onclick="openModal('manage-categories-modal')">Manage Categories</button>
+                            <button class="btn btn-outline btn-sm editor-only" onclick="openModal('vendor-mappings-modal')" style="margin-left: 0.5rem;">Vendor Mappings</button>
                         </div>
                     </div>
                 </div>
@@ -2089,7 +2105,7 @@
                                     <p class="text-muted mb-2" style="font-size: 0.875rem;">Download a complete backup of all portal data.</p>
                                     <button class="btn btn-secondary btn-sm" onclick="exportAllData()">Export JSON</button>
                                 </div>
-                                <div>
+                                <div class="editor-only">
                                     <h4 style="font-size: 0.875rem; margin-bottom: 0.5rem;">Import Data</h4>
                                     <p class="text-muted mb-2" style="font-size: 0.875rem;">Restore from a previous backup.</p>
                                     <button class="btn btn-secondary btn-sm" onclick="openModal('import-backup-modal')">Import Backup</button>
@@ -2100,7 +2116,7 @@
                 </div>
 
                 <!-- Unified Import -->
-                <div class="settings-section">
+                <div class="settings-section editor-only">
                     <h3 class="settings-title">Unified Import (Kajabi + Stripe)</h3>
                     <div class="card">
                         <div class="card-body">
@@ -2566,7 +2582,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal('member-details-modal')">Close</button>
-                <button class="btn btn-primary" onclick="saveMemberNotes()">Save Notes</button>
+                <button class="btn btn-primary editor-only" onclick="saveMemberNotes()">Save Notes</button>
             </div>
         </div>
     </div>
@@ -2596,13 +2612,41 @@
             },
             'eytan@bogen.ai': {
                 name: 'Eytan',
-                role: 'full_admin',
+                role: 'observer',
                 initials: 'EY'
             }
         };
 
         // Current user session
         let currentUser = null;
+
+        // Role check helpers
+        function isObserver() {
+            return currentUser && currentUser.role === 'observer';
+        }
+
+        function canEdit() {
+            return currentUser && currentUser.role !== 'observer';
+        }
+
+        function applyRoleRestrictions() {
+            if (isObserver()) {
+                document.body.classList.add('observer-mode');
+                // Disable notes textarea for observers
+                const notesField = document.getElementById('member-detail-notes');
+                if (notesField) {
+                    notesField.readOnly = true;
+                    notesField.placeholder = 'Notes (read-only for observers)';
+                }
+            } else {
+                document.body.classList.remove('observer-mode');
+                const notesField = document.getElementById('member-detail-notes');
+                if (notesField) {
+                    notesField.readOnly = false;
+                    notesField.placeholder = 'Add notes about this member...';
+                }
+            }
+        }
 
         // App data (localStorage with Supabase sync)
         let appData = {
@@ -3814,9 +3858,13 @@
             const roleLabels = {
                 'admin': 'Admin',
                 'full_admin': 'Full Admin',
-                'user': 'User'
+                'user': 'User',
+                'observer': 'Observer (Read-Only)'
             };
             document.getElementById('user-role').textContent = roleLabels[currentUser.role] || currentUser.role || 'User';
+
+            // Apply role restrictions for observers
+            applyRoleRestrictions();
             document.getElementById('user-avatar').textContent = currentUser.initials;
 
             // Show/hide admin-only sections
@@ -3866,7 +3914,8 @@
             const roleLabels = {
                 'admin': 'Admin',
                 'full_admin': 'Full Admin',
-                'user': 'User'
+                'user': 'User',
+                'observer': 'Observer (Read-Only)'
             };
 
             document.getElementById('settings-user-avatar').textContent = currentUser.initials || '--';
@@ -5634,7 +5683,7 @@
                                 <span class="badge badge-warning" style="font-size: 0.65rem;">${m.reasons.join(', ')}</span>
                             </div>
                         </div>
-                        <div style="margin-top: 0.5rem;">
+                        <div style="margin-top: 0.5rem;" class="editor-only">
                             <button class="btn btn-sm btn-outline" onclick="openMergeModal('${primary.id}', '${m.member.id}')">Merge into ${escapeHtml(primary.name.split(' ')[0])}</button>
                             <button class="btn btn-sm btn-outline" onclick="openMergeModal('${m.member.id}', '${primary.id}')" style="margin-left: 0.25rem;">Merge into ${escapeHtml(m.member.name.split(' ')[0])}</button>
                             <button class="btn btn-sm" onclick="dismissDuplicate(${idx}, '${m.member.id}')" style="margin-left: 0.25rem;">Not a duplicate</button>
