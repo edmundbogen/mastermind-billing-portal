@@ -2885,15 +2885,24 @@
                         name: m.name,
                         fullName: m.name,
                         kajabiId: m.kajabi_id,
+                        kajabi_id: m.kajabi_id,
                         plan: m.subscription_plan,
+                        subscription_plan: m.subscription_plan,
                         offerName: m.subscription_plan,
                         amount: m.subscription_amount,
+                        subscription_amount: m.subscription_amount,
                         billingFrequency: m.billing_frequency,
+                        billing_frequency: m.billing_frequency,
                         status: m.subscription_status,
+                        subscription_status: m.subscription_status,
                         joinDate: m.join_date,
+                        join_date: m.join_date,
                         createdAt: m.created_at,
+                        created_at: m.created_at,
                         lastPaymentDate: m.last_payment_date,
+                        last_payment_date: m.last_payment_date,
                         totalPaid: m.total_paid,
+                        total_paid: m.total_paid,
                         notes: m.notes
                     }));
                 }
@@ -2910,20 +2919,27 @@
                     // Use Supabase as source of truth - replace local data
                     appData.stripeTransactions = transactions.map(t => ({
                         id: t.stripe_id,
+                        stripe_id: t.stripe_id,
                         stripeId: t.stripe_id,
                         account: t.stripe_account,
+                        stripe_account: t.stripe_account,
                         stripeAccount: t.stripe_account,
                         email: t.member_email,
+                        member_email: t.member_email,
                         customerEmail: t.member_email,
                         name: t.customer_name,
+                        customer_name: t.customer_name,
                         customerName: t.customer_name,
                         amount: t.amount,
                         fee: t.fee,
+                        net_amount: t.net_amount,
                         netAmount: t.net_amount,
                         status: t.status,
                         date: t.transaction_date,
+                        transaction_date: t.transaction_date,
                         created: t.transaction_date,
                         description: t.description,
+                        product_name: t.product_name,
                         productName: t.product_name
                     }));
                 }
