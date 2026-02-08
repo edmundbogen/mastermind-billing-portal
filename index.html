@@ -1538,6 +1538,7 @@
                         <p class="page-subtitle">Manage your mastermind members and subscriptions</p>
                     </div>
                     <div class="quick-actions">
+                        <button class="btn btn-warning" onclick="detectDuplicates(); renderDuplicatesPanel();" title="Scan for duplicate members">Find Duplicates</button>
                         <button class="btn btn-primary" onclick="openModal('import-kajabi-modal')">Import Kajabi CSV</button>
                         <button class="btn btn-secondary" onclick="exportMembers()">Export</button>
                     </div>
@@ -1560,6 +1561,19 @@
                     <div class="stat-card danger">
                         <div class="stat-label">Canceled This Month</div>
                         <div class="stat-value" id="members-canceled">0</div>
+                    </div>
+                </div>
+
+                <!-- Potential Duplicates Alert -->
+                <div id="duplicates-alert" class="card mb-3" style="display: none; border-left: 4px solid var(--warning);">
+                    <div class="card-header" style="background: var(--warning-light);">
+                        <h3 class="card-title" style="color: var(--warning);">Potential Duplicates Found</h3>
+                        <span class="badge badge-warning" id="duplicates-count">0</span>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted mb-2" style="font-size: 0.875rem;">These members may be duplicates. Review and merge as needed.</p>
+                        <div id="duplicates-list" style="max-height: 300px; overflow-y: auto;"></div>
+                        <button class="btn btn-sm btn-outline" onclick="clearResolvedDuplicates()" style="margin-top: 0.75rem;">Clear Resolved</button>
                     </div>
                 </div>
 
@@ -2084,6 +2098,17 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Unified Import -->
+                <div class="settings-section">
+                    <h3 class="settings-title">Unified Import (Kajabi + Stripe)</h3>
+                    <div class="card">
+                        <div class="card-body">
+                            <p class="text-muted mb-2" style="font-size: 0.875rem;">Import Kajabi contacts and Stripe customer data together. Automatically detects duplicates for review.</p>
+                            <button class="btn btn-primary btn-sm" onclick="openModal('unified-import-modal')">Start Unified Import</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </main>
     </div>
@@ -2113,6 +2138,49 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal('change-password-modal')">Cancel</button>
                 <button class="btn btn-primary" onclick="savePassword()">Save Password</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Unified Import Modal -->
+    <div class="modal-overlay" id="unified-import-modal">
+        <div class="modal" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Unified Import</h3>
+                <button class="modal-close" onclick="closeModal('unified-import-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted mb-3">Upload your Kajabi contacts and Stripe customer exports. The system will merge records by email and flag potential duplicates.</p>
+
+                <div class="form-group">
+                    <label>Kajabi Contacts (CSV)</label>
+                    <input type="file" id="unified-kajabi-file" accept=".csv" class="form-control">
+                    <small class="text-muted">Export from Kajabi: Contacts section</small>
+                </div>
+
+                <div class="form-group">
+                    <label>Stripe Account 1 - REIGNation (CSV)</label>
+                    <input type="file" id="unified-stripe1-file" accept=".csv" class="form-control">
+                    <small class="text-muted">Customers export from Stripe Dashboard</small>
+                </div>
+
+                <div class="form-group">
+                    <label>Stripe Account 2 - Coaching/Kajabi (CSV)</label>
+                    <input type="file" id="unified-stripe2-file" accept=".csv" class="form-control">
+                    <small class="text-muted">Customers export from Stripe (Kajabi payments)</small>
+                </div>
+
+                <div class="form-group mb-0">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                        <input type="checkbox" id="unified-clear-existing" style="width: auto;">
+                        <span>Clear existing members before import</span>
+                    </label>
+                    <small class="text-muted">Check this for a fresh start. Leave unchecked to merge with existing data.</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('unified-import-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="runUnifiedImport()">Import & Detect Duplicates</button>
             </div>
         </div>
     </div>
@@ -4090,6 +4158,9 @@
 
             // Render table
             filterMembers();
+
+            // Render duplicates panel if there are any
+            renderDuplicatesPanel();
         }
 
         function filterMembers() {
@@ -5195,6 +5266,512 @@
             };
 
             reader.readAsText(file);
+        }
+
+        // ============================================
+        // UNIFIED IMPORT & DUPLICATE DETECTION
+        // ============================================
+
+        // Store detected duplicates
+        let detectedDuplicates = [];
+
+        function runUnifiedImport() {
+            const kajabiFile = document.getElementById('unified-kajabi-file').files[0];
+            const stripe1File = document.getElementById('unified-stripe1-file').files[0];
+            const stripe2File = document.getElementById('unified-stripe2-file').files[0];
+            const clearExisting = document.getElementById('unified-clear-existing').checked;
+
+            if (!kajabiFile && !stripe1File && !stripe2File) {
+                alert('Please select at least one file to import.');
+                return;
+            }
+
+            // Auto-backup before import
+            autoBackupBeforeImport();
+
+            if (clearExisting) {
+                appData.members = [];
+                appData.stripeTransactions = [];
+            }
+
+            let filesProcessed = 0;
+            const totalFiles = (kajabiFile ? 1 : 0) + (stripe1File ? 1 : 0) + (stripe2File ? 1 : 0);
+
+            const checkComplete = () => {
+                filesProcessed++;
+                if (filesProcessed >= totalFiles) {
+                    // Run duplicate detection
+                    detectDuplicates();
+                    renderDuplicatesPanel();
+
+                    // Save and refresh
+                    saveToLocalStorage(true);
+                    refreshDashboard();
+                    refreshMembersTable();
+
+                    closeModal('unified-import-modal');
+
+                    const dupCount = detectedDuplicates.length;
+                    alert(`Import complete!\n\nMembers: ${appData.members.length}\nPotential duplicates: ${dupCount}\n\n${dupCount > 0 ? 'Check the Members tab to review duplicates.' : ''}`);
+                }
+            };
+
+            // Process Kajabi file
+            if (kajabiFile) {
+                Papa.parse(kajabiFile, {
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: function(results) {
+                        processKajabiContactsImport(results.data);
+                        checkComplete();
+                    },
+                    error: function(error) {
+                        console.error('Kajabi parse error:', error);
+                        checkComplete();
+                    }
+                });
+            }
+
+            // Process Stripe file 1 (REIGNation)
+            if (stripe1File) {
+                Papa.parse(stripe1File, {
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: function(results) {
+                        processStripeCustomersImport(results.data, 'reignation');
+                        checkComplete();
+                    },
+                    error: function(error) {
+                        console.error('Stripe 1 parse error:', error);
+                        checkComplete();
+                    }
+                });
+            }
+
+            // Process Stripe file 2 (Coaching/Kajabi)
+            if (stripe2File) {
+                Papa.parse(stripe2File, {
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: function(results) {
+                        processStripeCustomersImport(results.data, 'coaching');
+                        checkComplete();
+                    },
+                    error: function(error) {
+                        console.error('Stripe 2 parse error:', error);
+                        checkComplete();
+                    }
+                });
+            }
+        }
+
+        function processKajabiContactsImport(data) {
+            console.log('Processing Kajabi contacts:', data.length, 'rows');
+            if (data.length > 0) {
+                console.log('Kajabi columns:', Object.keys(data[0]));
+            }
+
+            data.forEach(row => {
+                const email = (row['Email'] || row['email'] || '').toLowerCase().trim();
+                if (!email) return;
+
+                const tags = row['Tags'] || '';
+                const products = row['Products'] || '';
+
+                // Determine status from tags
+                let status = 'active';
+                if (tags.includes('CANCELLED!')) {
+                    status = 'canceled';
+                } else if (tags.includes('Free Memeber') || tags.includes('Free Meeting')) {
+                    status = 'active'; // Free but active
+                } else if (!tags.includes('Charged on Stripe') && !tags.includes('REIGNmaker')) {
+                    status = 'canceled'; // Never paid or not a member
+                }
+
+                // Check if member already exists
+                let member = appData.members.find(m => m.email === email);
+
+                if (member) {
+                    // Update existing member with Kajabi data
+                    member.name = row['Name'] || member.name;
+                    member.phone = row['Phone Number (phone_number)'] || row['phone_number'] || member.phone;
+                    member.kajabi_id = row['Member ID'] || row['ID'] || member.kajabi_id;
+                    member.join_date = row['Created At'] || row['Member Created At'] || member.join_date;
+                    member.tags = tags;
+                    member.products = products;
+                    member.agency = row['Real Estate Agency (custom_3)'] || member.agency;
+                    member.updated_at = new Date().toISOString();
+                } else {
+                    // Create new member
+                    member = {
+                        id: generateId(),
+                        email: email,
+                        name: row['Name'] || row['First Name'] + ' ' + row['Last Name'] || email,
+                        phone: row['Phone Number (phone_number)'] || row['phone_number'] || '',
+                        kajabi_id: row['Member ID'] || row['ID'] || '',
+                        subscription_status: status,
+                        subscription_plan: tags.includes('REIGNmaker') ? 'REIGNmaker' : 'Other',
+                        subscription_amount: 0,
+                        billing_frequency: 'monthly',
+                        join_date: row['Created At'] || row['Member Created At'] || '',
+                        total_paid: 0,
+                        payment_count: 0,
+                        tags: tags,
+                        products: products,
+                        agency: row['Real Estate Agency (custom_3)'] || '',
+                        address: [row['Address (address_line_1)'], row['City (address_city)'], row['State (address_state)'], row['Zip Code (address_zip)']].filter(Boolean).join(', '),
+                        notes: row['Note (custom_2)'] || '',
+                        alternate_emails: [],
+                        stripe_customer_ids: [],
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    };
+                    appData.members.push(member);
+                }
+            });
+
+            console.log('Kajabi import complete. Total members:', appData.members.length);
+        }
+
+        function processStripeCustomersImport(data, account) {
+            console.log('Processing Stripe customers:', data.length, 'rows for account:', account);
+            if (data.length > 0) {
+                console.log('Stripe columns:', Object.keys(data[0]));
+            }
+
+            data.forEach(row => {
+                const email = (row['Email'] || '').toLowerCase().trim();
+                const stripeCustomerId = row['id'] || '';
+                const totalSpend = parseFloat(row['Total Spend'] || 0);
+                const paymentCount = parseInt(row['Payment Count'] || 0);
+                const name = row['Name'] || row['Description'] || '';
+                const kajabiMemberId = row['kjb_member_id (metadata)'] || '';
+                const phone = row['phone_number (metadata)'] || '';
+
+                if (!email && !stripeCustomerId) return;
+
+                // Find existing member by email, or by kajabi_id
+                let member = appData.members.find(m =>
+                    m.email === email ||
+                    (kajabiMemberId && m.kajabi_id === kajabiMemberId)
+                );
+
+                if (member) {
+                    // Update with Stripe data
+                    member.total_paid = (member.total_paid || 0) + totalSpend;
+                    member.payment_count = (member.payment_count || 0) + paymentCount;
+                    if (!member.stripe_customer_ids) member.stripe_customer_ids = [];
+                    if (stripeCustomerId && !member.stripe_customer_ids.includes(stripeCustomerId)) {
+                        member.stripe_customer_ids.push(stripeCustomerId);
+                    }
+                    if (phone && !member.phone) member.phone = phone;
+                    if (kajabiMemberId && !member.kajabi_id) member.kajabi_id = kajabiMemberId;
+
+                    // Track alternate emails
+                    if (email && email !== member.email) {
+                        if (!member.alternate_emails) member.alternate_emails = [];
+                        if (!member.alternate_emails.includes(email)) {
+                            member.alternate_emails.push(email);
+                        }
+                    }
+
+                    // Update status if they have payments
+                    if (totalSpend > 0 && paymentCount > 0) {
+                        member.subscription_status = 'active';
+                    }
+
+                    member.updated_at = new Date().toISOString();
+                } else {
+                    // Create new member from Stripe data
+                    member = {
+                        id: generateId(),
+                        email: email,
+                        name: name || email,
+                        phone: phone,
+                        kajabi_id: kajabiMemberId,
+                        subscription_status: totalSpend > 0 ? 'active' : 'canceled',
+                        subscription_plan: 'REIGNmaker',
+                        subscription_amount: paymentCount > 0 ? Math.round(totalSpend / paymentCount) : 0,
+                        billing_frequency: 'monthly',
+                        total_paid: totalSpend,
+                        payment_count: paymentCount,
+                        stripe_customer_ids: stripeCustomerId ? [stripeCustomerId] : [],
+                        alternate_emails: [],
+                        notes: `Imported from Stripe (${account})`,
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    };
+                    appData.members.push(member);
+                }
+            });
+
+            console.log('Stripe import complete. Total members:', appData.members.length);
+        }
+
+        function detectDuplicates() {
+            detectedDuplicates = [];
+            const checked = new Set();
+
+            appData.members.forEach((member, i) => {
+                if (checked.has(member.id)) return;
+
+                const matches = [];
+
+                appData.members.forEach((other, j) => {
+                    if (i === j || checked.has(other.id)) return;
+
+                    let score = 0;
+                    let reasons = [];
+
+                    // Same phone number (strong indicator)
+                    if (member.phone && other.phone) {
+                        const phone1 = member.phone.replace(/\D/g, '').slice(-10);
+                        const phone2 = other.phone.replace(/\D/g, '').slice(-10);
+                        if (phone1 === phone2 && phone1.length >= 10) {
+                            score += 50;
+                            reasons.push('Same phone');
+                        }
+                    }
+
+                    // Same last name + similar first name
+                    const name1Parts = (member.name || '').toLowerCase().split(/\s+/);
+                    const name2Parts = (other.name || '').toLowerCase().split(/\s+/);
+                    if (name1Parts.length >= 2 && name2Parts.length >= 2) {
+                        const lastName1 = name1Parts[name1Parts.length - 1];
+                        const lastName2 = name2Parts[name2Parts.length - 1];
+                        const firstName1 = name1Parts[0];
+                        const firstName2 = name2Parts[0];
+
+                        if (lastName1 === lastName2 && lastName1.length > 2) {
+                            score += 25;
+                            reasons.push('Same last name');
+
+                            // Check if first names are similar (Ed vs Edmund, etc.)
+                            if (firstName1 === firstName2) {
+                                score += 20;
+                                reasons.push('Same first name');
+                            } else if (firstName1.startsWith(firstName2) || firstName2.startsWith(firstName1)) {
+                                score += 15;
+                                reasons.push('Similar first name');
+                            }
+                        }
+                    }
+
+                    // Same Kajabi ID
+                    if (member.kajabi_id && other.kajabi_id && member.kajabi_id === other.kajabi_id) {
+                        score += 40;
+                        reasons.push('Same Kajabi ID');
+                    }
+
+                    // Similar email patterns (same username, different domain)
+                    const email1User = (member.email || '').split('@')[0];
+                    const email2User = (other.email || '').split('@')[0];
+                    if (email1User && email2User && email1User.length > 3 && email2User.length > 3) {
+                        if (email1User === email2User) {
+                            score += 30;
+                            reasons.push('Same email username');
+                        } else if (email1User.replace(/\./g, '') === email2User.replace(/\./g, '')) {
+                            score += 25;
+                            reasons.push('Similar email username');
+                        }
+                    }
+
+                    // If score is high enough, add to matches
+                    if (score >= 40) {
+                        matches.push({
+                            member: other,
+                            score: score,
+                            reasons: reasons
+                        });
+                    }
+                });
+
+                if (matches.length > 0) {
+                    // Sort matches by score
+                    matches.sort((a, b) => b.score - a.score);
+
+                    detectedDuplicates.push({
+                        primary: member,
+                        matches: matches
+                    });
+
+                    // Mark all as checked
+                    checked.add(member.id);
+                    matches.forEach(m => checked.add(m.member.id));
+                }
+            });
+
+            console.log('Duplicate detection complete. Found:', detectedDuplicates.length, 'groups');
+            return detectedDuplicates;
+        }
+
+        function renderDuplicatesPanel() {
+            const alertDiv = document.getElementById('duplicates-alert');
+            const listDiv = document.getElementById('duplicates-list');
+            const countSpan = document.getElementById('duplicates-count');
+
+            if (!alertDiv || !listDiv) return;
+
+            if (detectedDuplicates.length === 0) {
+                alertDiv.style.display = 'none';
+                return;
+            }
+
+            alertDiv.style.display = 'block';
+            countSpan.textContent = detectedDuplicates.length;
+
+            listDiv.innerHTML = detectedDuplicates.map((dup, idx) => {
+                const primary = dup.primary;
+                const matchList = dup.matches.map(m => {
+                    return `<div style="margin-left: 1.5rem; padding: 0.5rem; background: var(--gray-50); border-radius: var(--radius-sm); margin-top: 0.5rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <strong>${escapeHtml(m.member.name || 'Unknown')}</strong>
+                                <span class="text-muted" style="margin-left: 0.5rem;">${escapeHtml(m.member.email)}</span>
+                                ${m.member.phone ? `<span class="text-muted" style="margin-left: 0.5rem;">${escapeHtml(m.member.phone)}</span>` : ''}
+                            </div>
+                            <div>
+                                <span class="badge badge-warning" style="font-size: 0.65rem;">${m.reasons.join(', ')}</span>
+                            </div>
+                        </div>
+                        <div style="margin-top: 0.5rem;">
+                            <button class="btn btn-sm btn-outline" onclick="openMergeModal('${primary.id}', '${m.member.id}')">Merge into ${escapeHtml(primary.name.split(' ')[0])}</button>
+                            <button class="btn btn-sm btn-outline" onclick="openMergeModal('${m.member.id}', '${primary.id}')" style="margin-left: 0.25rem;">Merge into ${escapeHtml(m.member.name.split(' ')[0])}</button>
+                            <button class="btn btn-sm" onclick="dismissDuplicate(${idx}, '${m.member.id}')" style="margin-left: 0.25rem;">Not a duplicate</button>
+                        </div>
+                    </div>`;
+                }).join('');
+
+                return `<div style="border: 1px solid var(--gray-200); border-radius: var(--radius-md); padding: 0.75rem; margin-bottom: 0.75rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <strong style="font-size: 1rem;">${escapeHtml(primary.name || 'Unknown')}</strong>
+                            <span class="text-muted" style="margin-left: 0.5rem;">${escapeHtml(primary.email)}</span>
+                            ${primary.phone ? `<span class="text-muted" style="margin-left: 0.5rem;">${escapeHtml(primary.phone)}</span>` : ''}
+                            ${primary.total_paid ? `<span class="badge badge-success" style="margin-left: 0.5rem;">$${primary.total_paid.toFixed(2)} paid</span>` : ''}
+                        </div>
+                    </div>
+                    <div style="margin-top: 0.25rem; font-size: 0.75rem; color: var(--gray-500);">
+                        Possible duplicates:
+                    </div>
+                    ${matchList}
+                </div>`;
+            }).join('');
+        }
+
+        function dismissDuplicate(groupIdx, memberId) {
+            if (groupIdx >= 0 && groupIdx < detectedDuplicates.length) {
+                const group = detectedDuplicates[groupIdx];
+                group.matches = group.matches.filter(m => m.member.id !== memberId);
+                if (group.matches.length === 0) {
+                    detectedDuplicates.splice(groupIdx, 1);
+                }
+                renderDuplicatesPanel();
+            }
+        }
+
+        function clearResolvedDuplicates() {
+            detectedDuplicates = [];
+            renderDuplicatesPanel();
+        }
+
+        function openMergeModal(primaryId, secondaryId) {
+            const primary = appData.members.find(m => m.id === primaryId);
+            const secondary = appData.members.find(m => m.id === secondaryId);
+
+            if (!primary || !secondary) {
+                alert('Could not find the members to merge.');
+                return;
+            }
+
+            const confirmMsg = `Merge "${secondary.name}" into "${primary.name}"?\n\n` +
+                `PRIMARY (will be kept):\n` +
+                `  Email: ${primary.email}\n` +
+                `  Phone: ${primary.phone || 'none'}\n` +
+                `  Total Paid: $${(primary.total_paid || 0).toFixed(2)}\n\n` +
+                `SECONDARY (will be merged & deleted):\n` +
+                `  Email: ${secondary.email}\n` +
+                `  Phone: ${secondary.phone || 'none'}\n` +
+                `  Total Paid: $${(secondary.total_paid || 0).toFixed(2)}\n\n` +
+                `The secondary email will be saved as an alternate email.`;
+
+            if (confirm(confirmMsg)) {
+                mergeMember(primaryId, secondaryId);
+            }
+        }
+
+        function mergeMember(primaryId, secondaryId) {
+            const primary = appData.members.find(m => m.id === primaryId);
+            const secondary = appData.members.find(m => m.id === secondaryId);
+
+            if (!primary || !secondary) return;
+
+            // Merge financial data
+            primary.total_paid = (primary.total_paid || 0) + (secondary.total_paid || 0);
+            primary.payment_count = (primary.payment_count || 0) + (secondary.payment_count || 0);
+
+            // Merge Stripe customer IDs
+            if (!primary.stripe_customer_ids) primary.stripe_customer_ids = [];
+            if (secondary.stripe_customer_ids) {
+                secondary.stripe_customer_ids.forEach(id => {
+                    if (!primary.stripe_customer_ids.includes(id)) {
+                        primary.stripe_customer_ids.push(id);
+                    }
+                });
+            }
+
+            // Save alternate email
+            if (!primary.alternate_emails) primary.alternate_emails = [];
+            if (secondary.email && !primary.alternate_emails.includes(secondary.email) && secondary.email !== primary.email) {
+                primary.alternate_emails.push(secondary.email);
+            }
+            if (secondary.alternate_emails) {
+                secondary.alternate_emails.forEach(email => {
+                    if (!primary.alternate_emails.includes(email) && email !== primary.email) {
+                        primary.alternate_emails.push(email);
+                    }
+                });
+            }
+
+            // Use phone if primary doesn't have one
+            if (!primary.phone && secondary.phone) {
+                primary.phone = secondary.phone;
+            }
+
+            // Merge notes
+            if (secondary.notes) {
+                primary.notes = (primary.notes ? primary.notes + '\n\n' : '') +
+                    `[Merged from ${secondary.email}]: ${secondary.notes}`;
+            }
+
+            // Add merge note
+            primary.notes = (primary.notes ? primary.notes + '\n\n' : '') +
+                `[${new Date().toISOString().slice(0, 10)}] Merged with: ${secondary.email}`;
+
+            // Update transactions to point to primary
+            appData.stripeTransactions.forEach(txn => {
+                if (txn.member_id === secondaryId || txn.member_email === secondary.email) {
+                    txn.member_id = primaryId;
+                }
+            });
+
+            // Remove secondary from members
+            appData.members = appData.members.filter(m => m.id !== secondaryId);
+
+            // Remove from duplicates list
+            detectedDuplicates = detectedDuplicates.filter(dup => {
+                if (dup.primary.id === secondaryId) return false;
+                dup.matches = dup.matches.filter(m => m.member.id !== secondaryId);
+                return dup.matches.length > 0 || dup.primary.id !== primaryId;
+            });
+
+            // Save and refresh
+            primary.updated_at = new Date().toISOString();
+            saveToLocalStorage(true);
+            refreshMembersTable();
+            renderDuplicatesPanel();
+
+            alert(`Merged successfully!\n\n"${secondary.name}" has been merged into "${primary.name}".`);
         }
 
         function downloadFile(content, filename, mimeType) {
