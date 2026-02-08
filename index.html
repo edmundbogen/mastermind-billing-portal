@@ -3227,8 +3227,9 @@
                 }
 
                 // Prepare stripe transactions
+                // Note: txn.id is the LOCAL identifier, txn.stripe_id is the REAL Stripe payment ID
                 const txnData = (appData.stripeTransactions || []).map(txn => ({
-                    stripe_id: txn.id || txn.stripeId || txn.stripe_id || `local_${generateId()}`,
+                    stripe_id: txn.stripe_id || txn.stripeId || `local_${generateId()}`,
                     stripe_account: txn.account || txn.stripeAccount || txn.stripe_account || 'reignation',
                     member_email: txn.member_email || txn.email || txn.customerEmail || null,
                     customer_name: txn.customer_name || txn.name || txn.customerName || null,
