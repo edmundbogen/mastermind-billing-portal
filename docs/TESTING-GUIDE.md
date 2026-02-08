@@ -10,15 +10,15 @@ After pushing changes to GitHub, wait 1-2 minutes for GitHub Pages to update, th
 
 ### Edmund Login
 1. Go to https://edmundbogen.github.io/mastermind-billing-portal/
-2. Select **Edmund Bogen** from dropdown
-3. Enter password: `StanleyBogen1!`
+2. Enter Edmund's email address
+3. Enter password (obtain from secure password manager or Edmund directly)
 4. Click **Sign In**
 5. **Expected**: Dashboard loads, shows "Edmund Bogen" in header
 
 ### Eytan Login
 1. Logout (click name in header, then Logout)
-2. Select **Eytan** from dropdown
-3. Enter password: `Eytanisgay1!`
+2. Enter Eytan's email address
+3. Enter password (obtain from secure password manager or Eytan directly)
 4. Click **Sign In**
 5. **Expected**: Dashboard loads, shows "Eytan" in header
 
@@ -136,8 +136,8 @@ console.log(JSON.parse(localStorage.getItem('mastermind_billing_data')));
 
 | Test | Result |
 |------|--------|
-| Edmund login | Works with `StanleyBogen1!` |
-| Eytan login | Works with `Eytanisgay1!` |
+| Edmund login | Works with secure password |
+| Eytan login | Works with secure password |
 | Data persists after close | Yes |
 | Sync indicator | Green "Synced" |
 | Multi-browser sync | Members match in both |
