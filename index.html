@@ -1149,6 +1149,185 @@
         .mt-2 { margin-top: 1rem; }
         .mt-3 { margin-top: 1.5rem; }
         .hidden { display: none !important; }
+
+        /* ============================================
+           BOOKKEEPING HERO IMAGE
+           ============================================ */
+        .bookkeeping-hero {
+            position: relative;
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            margin-bottom: 2rem;
+            background: linear-gradient(135deg, var(--navy) 0%, var(--navy-dark) 100%);
+        }
+
+        .bookkeeping-hero img {
+            width: 100%;
+            max-height: 200px;
+            object-fit: cover;
+            object-position: center top;
+            opacity: 0.9;
+        }
+
+        .bookkeeping-hero-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 1.5rem 2rem;
+            background: linear-gradient(to top, rgba(15, 42, 66, 0.95) 0%, rgba(15, 42, 66, 0.7) 50%, transparent 100%);
+        }
+
+        .bookkeeping-hero-text {
+            color: var(--white);
+            font-family: 'Montserrat', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 300;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+        }
+
+        .bookkeeping-hero-subtext {
+            color: var(--brand-primary);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            margin-top: 0.25rem;
+        }
+
+        /* ============================================
+           PAGINATION
+           ============================================ */
+        .pagination {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-top: 1.5rem;
+            padding: 1rem;
+            border-top: 1px solid var(--gray-200);
+        }
+
+        .pagination-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 36px;
+            height: 36px;
+            padding: 0 0.75rem;
+            border: 1px solid var(--gray-300);
+            border-radius: var(--radius-md);
+            background: var(--white);
+            color: var(--gray-700);
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .pagination-btn:hover:not(:disabled) {
+            background: var(--gray-50);
+            border-color: var(--brand-primary);
+            color: var(--brand-primary);
+        }
+
+        .pagination-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .pagination-btn.active {
+            background: var(--brand-primary);
+            border-color: var(--brand-primary);
+            color: var(--white);
+        }
+
+        .pagination-info {
+            font-size: 0.875rem;
+            color: var(--gray-500);
+            margin: 0 1rem;
+        }
+
+        /* ============================================
+           REPORTS CHARTS
+           ============================================ */
+        .reports-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 1024px) {
+            .reports-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            padding: 1rem;
+        }
+
+        .report-stat-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        @media (max-width: 768px) {
+            .report-stat-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        .report-stat-card {
+            background: var(--white);
+            border-radius: var(--radius-md);
+            padding: 1.25rem;
+            border: 1px solid var(--gray-200);
+            text-align: center;
+        }
+
+        .report-stat-value {
+            font-size: 1.75rem;
+            font-weight: 600;
+            color: var(--navy);
+            margin-bottom: 0.25rem;
+        }
+
+        .report-stat-value.positive { color: var(--success); }
+        .report-stat-value.negative { color: var(--danger); }
+
+        .report-stat-label {
+            font-size: 0.75rem;
+            color: var(--gray-500);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .churn-metric {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem;
+            border-bottom: 1px solid var(--gray-100);
+        }
+
+        .churn-metric:last-child {
+            border-bottom: none;
+        }
+
+        .churn-label {
+            font-size: 0.875rem;
+            color: var(--gray-600);
+        }
+
+        .churn-value {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
@@ -1444,14 +1623,22 @@
                 <!-- Discrepancies Table -->
                 <div class="card">
                     <div class="card-header">
-                        <h3 class="card-title">Discrepancies</h3>
-                        <select id="discrepancy-filter" style="padding: 0.5rem 1rem; border: 1px solid var(--gray-300); border-radius: var(--radius-md);">
-                            <option value="">All Issues</option>
-                            <option value="missing_stripe_payment">Missing Payment</option>
-                            <option value="failed_payment">Failed Payment</option>
-                            <option value="amount_mismatch">Amount Mismatch</option>
-                            <option value="missing_kajabi_record">Not in Kajabi</option>
-                        </select>
+                        <h3 class="card-title">Discrepancies <span id="discrepancy-count" style="font-weight: 400; color: var(--gray-500);"></span></h3>
+                        <div style="display: flex; gap: 0.75rem; align-items: center;">
+                            <select id="discrepancy-filter" style="padding: 0.5rem 1rem; border: 1px solid var(--gray-300); border-radius: var(--radius-md);" onchange="renderDiscrepanciesTable()">
+                                <option value="">All Issues</option>
+                                <option value="missing_stripe_payment">Missing Payment</option>
+                                <option value="failed_payment">Failed Payment</option>
+                                <option value="amount_mismatch">Amount Mismatch</option>
+                                <option value="missing_kajabi_record">Not in Kajabi</option>
+                            </select>
+                            <select id="discrepancy-per-page" style="padding: 0.5rem 1rem; border: 1px solid var(--gray-300); border-radius: var(--radius-md);" onchange="changeDiscrepancyPageSize()">
+                                <option value="10">10 per page</option>
+                                <option value="25">25 per page</option>
+                                <option value="50">50 per page</option>
+                                <option value="100">100 per page</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="table-container">
                         <table>
@@ -1474,6 +1661,14 @@
                             </tbody>
                         </table>
                     </div>
+                    <!-- Pagination -->
+                    <div class="pagination" id="discrepancy-pagination" style="display: none;">
+                        <button class="pagination-btn" onclick="goToDiscrepancyPage('first')" id="disc-page-first">&laquo;</button>
+                        <button class="pagination-btn" onclick="goToDiscrepancyPage('prev')" id="disc-page-prev">&lsaquo;</button>
+                        <span class="pagination-info" id="disc-page-info">Page 1 of 1</span>
+                        <button class="pagination-btn" onclick="goToDiscrepancyPage('next')" id="disc-page-next">&rsaquo;</button>
+                        <button class="pagination-btn" onclick="goToDiscrepancyPage('last')" id="disc-page-last">&raquo;</button>
+                    </div>
                 </div>
             </div>
 
@@ -1481,6 +1676,15 @@
                  BOOKKEEPING TAB
                  ============================================ -->
             <div class="page-content" id="page-bookkeeping">
+                <!-- Hero Image -->
+                <div class="bookkeeping-hero">
+                    <img src="edmund-books.png" alt="Edmund's Bookkeeping">
+                    <div class="bookkeeping-hero-overlay">
+                        <div class="bookkeeping-hero-text">Edmund's Books</div>
+                        <div class="bookkeeping-hero-subtext">Stay calm. Stay organized.</div>
+                    </div>
+                </div>
+
                 <div class="page-header">
                     <div>
                         <h1 class="page-title">Bookkeeping</h1>
@@ -1655,18 +1859,127 @@
                 <div class="page-header">
                     <div>
                         <h1 class="page-title">Reports</h1>
-                        <p class="page-subtitle">Generate financial and membership reports</p>
+                        <p class="page-subtitle">Financial analytics and membership insights</p>
+                    </div>
+                    <div class="quick-actions">
+                        <select id="report-period" style="padding: 0.5rem 1rem; border: 1px solid var(--gray-300); border-radius: var(--radius-md);" onchange="refreshReports()">
+                            <option value="this_month">This Month</option>
+                            <option value="last_month">Last Month</option>
+                            <option value="this_quarter">This Quarter</option>
+                            <option value="last_quarter">Last Quarter</option>
+                            <option value="this_year" selected>This Year</option>
+                            <option value="all_time">All Time</option>
+                        </select>
+                        <button class="btn btn-secondary" onclick="exportReportsToPDF()">Export PDF</button>
                     </div>
                 </div>
 
-                <!-- Coming Soon -->
-                <div class="card">
-                    <div class="card-body">
-                        <div class="empty-state">
-                            <div class="empty-state-icon">&#128202;</div>
-                            <div class="empty-state-title">Reports Module</div>
-                            <div class="empty-state-message">This section will include monthly revenue reports, member churn analysis, and custom report builder.<br>Coming in Phase 6.</div>
+                <!-- Key Metrics -->
+                <div class="report-stat-grid">
+                    <div class="report-stat-card">
+                        <div class="report-stat-value positive" id="report-total-revenue">$0</div>
+                        <div class="report-stat-label">Total Revenue</div>
+                    </div>
+                    <div class="report-stat-card">
+                        <div class="report-stat-value" id="report-total-members">0</div>
+                        <div class="report-stat-label">Active Members</div>
+                    </div>
+                    <div class="report-stat-card">
+                        <div class="report-stat-value" id="report-avg-revenue">$0</div>
+                        <div class="report-stat-label">Avg Revenue/Member</div>
+                    </div>
+                    <div class="report-stat-card">
+                        <div class="report-stat-value" id="report-churn-rate">0%</div>
+                        <div class="report-stat-label">Churn Rate</div>
+                    </div>
+                </div>
+
+                <!-- Charts Grid -->
+                <div class="reports-grid">
+                    <!-- Monthly Revenue Chart -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Monthly Revenue</h3>
                         </div>
+                        <div class="chart-container">
+                            <canvas id="revenue-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Member Growth Chart -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Member Growth</h3>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="members-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Revenue by Source -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Revenue by Source</h3>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="source-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Churn Analysis -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Churn Analysis</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="churn-metric">
+                                <span class="churn-label">New Members (Period)</span>
+                                <span class="churn-value positive" id="churn-new">0</span>
+                            </div>
+                            <div class="churn-metric">
+                                <span class="churn-label">Canceled Members</span>
+                                <span class="churn-value negative" id="churn-canceled">0</span>
+                            </div>
+                            <div class="churn-metric">
+                                <span class="churn-label">Net Change</span>
+                                <span class="churn-value" id="churn-net">0</span>
+                            </div>
+                            <div class="churn-metric">
+                                <span class="churn-label">Retention Rate</span>
+                                <span class="churn-value" id="churn-retention">0%</span>
+                            </div>
+                            <div class="churn-metric">
+                                <span class="churn-label">Avg Member Lifetime</span>
+                                <span class="churn-value" id="churn-lifetime">0 months</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Top Members Table -->
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h3 class="card-title">Top Members by Revenue</h3>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Member</th>
+                                    <th>Plan</th>
+                                    <th>Total Paid</th>
+                                    <th>Payments</th>
+                                    <th>Since</th>
+                                </tr>
+                            </thead>
+                            <tbody id="top-members-table">
+                                <tr>
+                                    <td colspan="5" class="text-center text-muted" style="padding: 2rem;">
+                                        No data available
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -2137,7 +2450,7 @@
 
         // Supabase Configuration
         const SUPABASE_URL = 'https://tnnymwtjcfedprfqwprd.supabase.co';
-        const SUPABASE_ANON_KEY = 'sb_publishable_GAw0PC_U6vgETPm8ct3uMQ_EcU-5sUf';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRubnltd3RqY2ZlZHByZnF3cHJkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk0ODYyMDIsImV4cCI6MjA4NTA2MjIwMn0.yTx0dVJ3NuBBCSQzM_QR2-vNUP-Y9iXHlgSyiGSmQgo';
 
         // Initialize Supabase client
         let supabaseClient = null;
@@ -2943,6 +3256,10 @@
                 refreshMembersTable();
             } else if (tabName === 'bookkeeping') {
                 refreshBookkeeping();
+            } else if (tabName === 'reports') {
+                refreshReports();
+            } else if (tabName === 'reconciliation') {
+                renderDiscrepanciesTable();
             }
         }
 
@@ -3707,15 +4024,27 @@
             alert(`Reconciliation complete!\n\nFound ${discrepancies.length} issues.`);
         }
 
+        // Pagination state for discrepancies
+        let discrepancyPage = 1;
+        let discrepancyPerPage = 10;
+
         function renderDiscrepanciesTable() {
             const tbody = document.getElementById('discrepancies-table-body');
             const filter = document.getElementById('discrepancy-filter').value;
+            const countEl = document.getElementById('discrepancy-count');
+            const paginationEl = document.getElementById('discrepancy-pagination');
 
             let discrepancies = appData.discrepancies.filter(d => d.status === 'open');
 
             if (filter) {
                 discrepancies = discrepancies.filter(d => d.discrepancy_type === filter);
             }
+
+            const totalItems = discrepancies.length;
+            const totalPages = Math.ceil(totalItems / discrepancyPerPage);
+
+            // Update count display
+            countEl.textContent = totalItems > 0 ? `(${totalItems} issues)` : '';
 
             if (discrepancies.length === 0) {
                 tbody.innerHTML = `
@@ -3725,10 +4054,20 @@
                         </td>
                     </tr>
                 `;
+                paginationEl.style.display = 'none';
                 return;
             }
 
-            tbody.innerHTML = discrepancies.map(d => `
+            // Ensure current page is valid
+            if (discrepancyPage > totalPages) discrepancyPage = totalPages;
+            if (discrepancyPage < 1) discrepancyPage = 1;
+
+            // Get items for current page
+            const startIndex = (discrepancyPage - 1) * discrepancyPerPage;
+            const endIndex = startIndex + discrepancyPerPage;
+            const pageItems = discrepancies.slice(startIndex, endIndex);
+
+            tbody.innerHTML = pageItems.map(d => `
                 <tr>
                     <td>
                         <strong>${d.member_name || 'Unknown'}</strong><br>
@@ -3743,6 +4082,41 @@
                     </td>
                 </tr>
             `).join('');
+
+            // Update pagination UI
+            if (totalPages > 1) {
+                paginationEl.style.display = 'flex';
+                document.getElementById('disc-page-info').textContent = `Page ${discrepancyPage} of ${totalPages} (${totalItems} items)`;
+                document.getElementById('disc-page-first').disabled = discrepancyPage === 1;
+                document.getElementById('disc-page-prev').disabled = discrepancyPage === 1;
+                document.getElementById('disc-page-next').disabled = discrepancyPage === totalPages;
+                document.getElementById('disc-page-last').disabled = discrepancyPage === totalPages;
+            } else {
+                paginationEl.style.display = 'none';
+            }
+        }
+
+        function goToDiscrepancyPage(action) {
+            const filter = document.getElementById('discrepancy-filter').value;
+            let discrepancies = appData.discrepancies.filter(d => d.status === 'open');
+            if (filter) {
+                discrepancies = discrepancies.filter(d => d.discrepancy_type === filter);
+            }
+            const totalPages = Math.ceil(discrepancies.length / discrepancyPerPage);
+
+            switch (action) {
+                case 'first': discrepancyPage = 1; break;
+                case 'prev': discrepancyPage = Math.max(1, discrepancyPage - 1); break;
+                case 'next': discrepancyPage = Math.min(totalPages, discrepancyPage + 1); break;
+                case 'last': discrepancyPage = totalPages; break;
+            }
+            renderDiscrepanciesTable();
+        }
+
+        function changeDiscrepancyPageSize() {
+            discrepancyPerPage = parseInt(document.getElementById('discrepancy-per-page').value);
+            discrepancyPage = 1; // Reset to first page
+            renderDiscrepanciesTable();
         }
 
         function formatDiscrepancyType(type) {
@@ -3767,6 +4141,338 @@
                 renderDiscrepanciesTable();
                 refreshDashboard();
             }
+        }
+
+        // ============================================
+        // REPORTS MODULE (Phase 6)
+        // ============================================
+
+        let revenueChart = null;
+        let membersChart = null;
+        let sourceChart = null;
+
+        function refreshReports() {
+            const period = document.getElementById('report-period').value;
+            const { startDate, endDate } = getPeriodDates(period);
+
+            // Get filtered data
+            const periodTransactions = appData.stripeTransactions.filter(t => {
+                const txnDate = new Date(t.transaction_date || t.date);
+                return txnDate >= startDate && txnDate <= endDate && t.status === 'succeeded';
+            });
+
+            const activeMembers = appData.members.filter(m =>
+                (m.subscription_status || m.status) === 'active'
+            );
+
+            const canceledMembers = appData.members.filter(m =>
+                (m.subscription_status || m.status) === 'canceled'
+            );
+
+            // Calculate metrics
+            const totalRevenue = periodTransactions.reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
+            const avgRevenue = activeMembers.length > 0 ? totalRevenue / activeMembers.length : 0;
+
+            // Calculate churn (members who canceled in period)
+            const newMembers = appData.members.filter(m => {
+                const joinDate = new Date(m.join_date || m.joinDate || m.createdAt);
+                return joinDate >= startDate && joinDate <= endDate;
+            }).length;
+
+            const churnedMembers = canceledMembers.filter(m => {
+                // Estimate cancellation from last payment
+                const lastPayment = appData.stripeTransactions
+                    .filter(t => t.member_email === m.email && t.status === 'succeeded')
+                    .sort((a, b) => new Date(b.transaction_date || b.date) - new Date(a.transaction_date || a.date))[0];
+                if (!lastPayment) return false;
+                const lastPaymentDate = new Date(lastPayment.transaction_date || lastPayment.date);
+                return lastPaymentDate >= startDate && lastPaymentDate <= endDate;
+            }).length;
+
+            const totalMembersStart = activeMembers.length + churnedMembers - newMembers;
+            const churnRate = totalMembersStart > 0 ? ((churnedMembers / totalMembersStart) * 100).toFixed(1) : 0;
+            const retentionRate = (100 - parseFloat(churnRate)).toFixed(1);
+
+            // Update stat cards
+            document.getElementById('report-total-revenue').textContent = '$' + formatCurrency(totalRevenue);
+            document.getElementById('report-total-members').textContent = activeMembers.length;
+            document.getElementById('report-avg-revenue').textContent = '$' + formatCurrency(avgRevenue);
+            document.getElementById('report-churn-rate').textContent = churnRate + '%';
+            document.getElementById('report-churn-rate').className = 'report-stat-value ' + (parseFloat(churnRate) > 5 ? 'negative' : '');
+
+            // Update churn analysis
+            document.getElementById('churn-new').textContent = '+' + newMembers;
+            document.getElementById('churn-canceled').textContent = '-' + churnedMembers;
+            document.getElementById('churn-net').textContent = (newMembers - churnedMembers >= 0 ? '+' : '') + (newMembers - churnedMembers);
+            document.getElementById('churn-net').className = 'churn-value ' + (newMembers - churnedMembers >= 0 ? 'positive' : 'negative');
+            document.getElementById('churn-retention').textContent = retentionRate + '%';
+
+            // Calculate avg lifetime (months since join for active members)
+            const avgLifetime = activeMembers.length > 0 ?
+                activeMembers.reduce((sum, m) => {
+                    const joinDate = new Date(m.join_date || m.joinDate || m.createdAt || Date.now());
+                    const months = Math.max(1, Math.floor((Date.now() - joinDate) / (30 * 24 * 60 * 60 * 1000)));
+                    return sum + months;
+                }, 0) / activeMembers.length : 0;
+            document.getElementById('churn-lifetime').textContent = avgLifetime.toFixed(1) + ' months';
+
+            // Render charts
+            renderRevenueChart(periodTransactions);
+            renderMembersChart();
+            renderSourceChart(periodTransactions);
+            renderTopMembersTable();
+        }
+
+        function getPeriodDates(period) {
+            const now = new Date();
+            let startDate, endDate;
+
+            switch (period) {
+                case 'this_month':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                    endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                    break;
+                case 'last_month':
+                    startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                    endDate = new Date(now.getFullYear(), now.getMonth(), 0);
+                    break;
+                case 'this_quarter':
+                    const q = Math.floor(now.getMonth() / 3);
+                    startDate = new Date(now.getFullYear(), q * 3, 1);
+                    endDate = new Date(now.getFullYear(), q * 3 + 3, 0);
+                    break;
+                case 'last_quarter':
+                    const lq = Math.floor(now.getMonth() / 3) - 1;
+                    const year = lq < 0 ? now.getFullYear() - 1 : now.getFullYear();
+                    const quarter = lq < 0 ? 3 : lq;
+                    startDate = new Date(year, quarter * 3, 1);
+                    endDate = new Date(year, quarter * 3 + 3, 0);
+                    break;
+                case 'this_year':
+                    startDate = new Date(now.getFullYear(), 0, 1);
+                    endDate = new Date(now.getFullYear(), 11, 31);
+                    break;
+                case 'all_time':
+                default:
+                    startDate = new Date(2020, 0, 1);
+                    endDate = now;
+            }
+
+            return { startDate, endDate };
+        }
+
+        function renderRevenueChart(transactions) {
+            const ctx = document.getElementById('revenue-chart');
+            if (!ctx) return;
+
+            // Group by month
+            const monthlyData = {};
+            transactions.forEach(t => {
+                const date = new Date(t.transaction_date || t.date);
+                const key = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0');
+                if (!monthlyData[key]) monthlyData[key] = 0;
+                monthlyData[key] += parseFloat(t.amount || 0);
+            });
+
+            const labels = Object.keys(monthlyData).sort();
+            const data = labels.map(k => monthlyData[k]);
+
+            // Format labels to readable months
+            const formattedLabels = labels.map(l => {
+                const [year, month] = l.split('-');
+                return new Date(year, month - 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+            });
+
+            if (revenueChart) revenueChart.destroy();
+
+            revenueChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: formattedLabels,
+                    datasets: [{
+                        label: 'Revenue',
+                        data: data,
+                        backgroundColor: 'rgba(0, 168, 225, 0.8)',
+                        borderColor: 'rgba(0, 168, 225, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: value => '$' + value.toLocaleString()
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderMembersChart() {
+            const ctx = document.getElementById('members-chart');
+            if (!ctx) return;
+
+            // Group members by join month
+            const monthlyJoins = {};
+            const monthlyChurns = {};
+
+            appData.members.forEach(m => {
+                const joinDate = new Date(m.join_date || m.joinDate || m.createdAt || Date.now());
+                const joinKey = joinDate.getFullYear() + '-' + String(joinDate.getMonth() + 1).padStart(2, '0');
+                if (!monthlyJoins[joinKey]) monthlyJoins[joinKey] = 0;
+                monthlyJoins[joinKey]++;
+
+                if ((m.subscription_status || m.status) === 'canceled') {
+                    // Estimate churn month from last payment
+                    const lastPayment = appData.stripeTransactions
+                        .filter(t => t.member_email === m.email && t.status === 'succeeded')
+                        .sort((a, b) => new Date(b.transaction_date || b.date) - new Date(a.transaction_date || a.date))[0];
+                    if (lastPayment) {
+                        const churnDate = new Date(lastPayment.transaction_date || lastPayment.date);
+                        const churnKey = churnDate.getFullYear() + '-' + String(churnDate.getMonth() + 1).padStart(2, '0');
+                        if (!monthlyChurns[churnKey]) monthlyChurns[churnKey] = 0;
+                        monthlyChurns[churnKey]++;
+                    }
+                }
+            });
+
+            const allMonths = [...new Set([...Object.keys(monthlyJoins), ...Object.keys(monthlyChurns)])].sort();
+            const last12 = allMonths.slice(-12);
+
+            const formattedLabels = last12.map(l => {
+                const [year, month] = l.split('-');
+                return new Date(year, month - 1).toLocaleDateString('en-US', { month: 'short' });
+            });
+
+            if (membersChart) membersChart.destroy();
+
+            membersChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: formattedLabels,
+                    datasets: [{
+                        label: 'New Members',
+                        data: last12.map(k => monthlyJoins[k] || 0),
+                        borderColor: 'rgba(5, 150, 105, 1)',
+                        backgroundColor: 'rgba(5, 150, 105, 0.1)',
+                        fill: true,
+                        tension: 0.3
+                    }, {
+                        label: 'Churned',
+                        data: last12.map(k => monthlyChurns[k] || 0),
+                        borderColor: 'rgba(220, 38, 38, 1)',
+                        backgroundColor: 'rgba(220, 38, 38, 0.1)',
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom' }
+                    },
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+        }
+
+        function renderSourceChart(transactions) {
+            const ctx = document.getElementById('source-chart');
+            if (!ctx) return;
+
+            // Group by Stripe account
+            const bySource = {};
+            transactions.forEach(t => {
+                const source = t.stripe_account || t.account || 'Unknown';
+                if (!bySource[source]) bySource[source] = 0;
+                bySource[source] += parseFloat(t.amount || 0);
+            });
+
+            const labels = Object.keys(bySource);
+            const data = Object.values(bySource);
+
+            if (sourceChart) sourceChart.destroy();
+
+            sourceChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels.map(l => l.charAt(0).toUpperCase() + l.slice(1)),
+                    datasets: [{
+                        data: data,
+                        backgroundColor: [
+                            'rgba(0, 168, 225, 0.8)',
+                            'rgba(26, 62, 92, 0.8)',
+                            'rgba(5, 150, 105, 0.8)',
+                            'rgba(217, 119, 6, 0.8)'
+                        ],
+                        borderWidth: 2,
+                        borderColor: '#fff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom' }
+                    }
+                }
+            });
+        }
+
+        function renderTopMembersTable() {
+            const tbody = document.getElementById('top-members-table');
+            if (!tbody) return;
+
+            // Calculate total paid per member
+            const memberTotals = appData.members.map(m => {
+                const payments = appData.stripeTransactions.filter(t =>
+                    t.member_email === m.email && t.status === 'succeeded'
+                );
+                const totalPaid = payments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+                return {
+                    ...m,
+                    totalPaid,
+                    paymentCount: payments.length
+                };
+            }).sort((a, b) => b.totalPaid - a.totalPaid).slice(0, 10);
+
+            if (memberTotals.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="text-center text-muted" style="padding: 2rem;">
+                            No member data available
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = memberTotals.map(m => `
+                <tr>
+                    <td>
+                        <strong>${m.name || m.fullName || 'Unknown'}</strong><br>
+                        <span class="text-muted" style="font-size: 0.75rem;">${m.email}</span>
+                    </td>
+                    <td>${m.subscription_plan || m.plan || m.offerName || 'Standard'}</td>
+                    <td class="text-success"><strong>$${formatCurrency(m.totalPaid)}</strong></td>
+                    <td>${m.paymentCount} payments</td>
+                    <td>${formatDate(m.join_date || m.joinDate || m.createdAt)}</td>
+                </tr>
+            `).join('');
+        }
+
+        function exportReportsToPDF() {
+            alert('PDF export coming soon! For now, use your browser\'s Print function (Ctrl/Cmd + P) to save as PDF.');
         }
 
         // ============================================
